@@ -1,0 +1,34 @@
+name: Weekly Rental Data Sync
+
+on:
+  schedule:
+    - cron: '0 0 * * 3' # Midnight every Wednesday
+  workflow_dispatch: # Allows you to trigger it manually
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: pip install requests pandas
+
+      - name: Run Rental Tracker
+        env:
+          RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
+        run: python rent_tracker.py
+
+      - name: Commit and Push CSV changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add rent_history.csv
+          git commit -m "Automated weekly rental update: $(date +'%Y-%m-%d')" || exit 0
+          git push
