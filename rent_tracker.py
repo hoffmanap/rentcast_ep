@@ -5,15 +5,14 @@ from datetime import datetime
 
 def fetch_rentals():
     api_key = os.getenv("RENTCAST_API_KEY")
-    # Endpoint for active long-term rental listings
     url = "https://api.rentcast.io/v1/listings/rental/long-term"
     
-    # Parameters for El Paso
+    # Parameters for El Paso with the 500 listing limit
     querystring = {
         "city": "El Paso",
         "state": "TX",
         "status": "Active",
-        "limit": 50  # Adjust based on how many listings you want per week
+        "limit": 500 
     }
 
     headers = {
@@ -29,15 +28,29 @@ def fetch_rentals():
         # Convert JSON to DataFrame
         df = pd.DataFrame(listings)
 
-        # Add metadata for tracking
+        # Add a capture date for historical tracking
         df['capture_date'] = datetime.now().strftime('%Y-%m-%d')
 
-        # Select columns relevant to your analysis
-        # RentCast provides rich data like 'propertyType', 'sqft', 'daysOnMarket'
-        cols_to_keep = ['id', 'formattedAddress', 'price', 'bedrooms', 'bathrooms', 'squareFootage', 'propertyType', 'capture_date']
-        df = df[cols_to_keep]
+        # Define the specific fields you requested + core rental data
+        cols_to_keep = [
+            'id', 
+            'formattedAddress', 
+            'zipCode',      # Zip Code
+            'price', 
+            'bedrooms', 
+            'bathrooms', 
+            'squareFootage', 
+            'yearBuilt',    # Year Built
+            'latitude',     # Latitude
+            'longitude',    # Longitude
+            'propertyType', 
+            'capture_date'
+        ]
+        
+        # Ensure only available columns are selected (prevents errors if a field is missing)
+        df = df[[c for c in cols_to_keep if c in df.columns]]
 
-        # Append to your local CSV
+        # Append to the local CSV file
         file_path = 'rent_history.csv'
         if not os.path.isfile(file_path):
             df.to_csv(file_path, index=False)
