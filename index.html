@@ -133,6 +133,27 @@
             background: #f1f5f9;
         }
 
+        /* Map Legend Styles */
+        .info.legend {
+            background: white;
+            padding: 10px 14px;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            line-height: 1.6;
+            font-size: 0.85rem;
+            color: var(--text-main);
+        }
+        .info.legend i {
+            width: 12px;
+            height: 12px;
+            float: left;
+            margin-right: 8px;
+            margin-top: 4px;
+            border-radius: 50%;
+            opacity: 0.7;
+        }
+
         .loading {
             position: absolute;
             top: 50%;
@@ -219,6 +240,7 @@
         let inventoryChartInstance = null;
         let mapInstance = null;
         let mapMarkers = L.layerGroup();
+        let mapLegend = null; // Store legend instance
         
         let allZips = [];
         let selectedZips = new Set();
@@ -366,6 +388,38 @@
                     fillOpacity: 0.7
                 }).bindPopup(popupContent).addTo(mapMarkers);
             });
+
+            // Update Map Legend
+            if (mapLegend) {
+                mapInstance.removeControl(mapLegend);
+            }
+
+            mapLegend = L.control({position: 'bottomright'});
+            mapLegend.onAdd = function () {
+                const div = L.DomUtil.create('div', 'info legend');
+                let html = `<strong>${metric === 'monthly' ? 'Monthly Rent' : 'Price / SqFt'}</strong><br>`;
+                
+                if (metric === 'monthly') {
+                    html += '<i style="background: #dc2626"></i> > $2,000<br>';
+                    html += '<i style="background: #d97706"></i> $1,400 &ndash; $2,000<br>';
+                    html += '<i style="background: #16a34a"></i> < $1,400<br>';
+                } else {
+                    html += '<i style="background: #dc2626"></i> > $1.50<br>';
+                    html += '<i style="background: #d97706"></i> $1.10 &ndash; $1.50<br>';
+                    html += '<i style="background: #16a34a"></i> < $1.10<br>';
+                }
+                
+                html += '<hr style="margin: 8px 0 5px 0; border-top: 1px solid #e2e8f0;">';
+                html += '<div style="display:flex; align-items:center; gap: 6px; font-size: 0.8rem;">';
+                html += '<div style="width: 6px; height: 6px; background: #64748b; border-radius: 50%;"></div>';
+                html += '<div style="width: 14px; height: 14px; background: #64748b; border-radius: 50%;"></div>';
+                html += '<span>Larger size = Higher price</span>';
+                html += '</div>';
+
+                div.innerHTML = html;
+                return div;
+            };
+            mapLegend.addTo(mapInstance);
         }
 
         function updateCharts() {
