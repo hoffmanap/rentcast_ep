@@ -82,8 +82,57 @@
             border-radius: 8px;
             border: 1px solid var(--border);
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            min-height: 300px;
+            display: flex;
+            flex-direction: column;
         }
+        .chart-card h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            color: var(--text-main);
+        }
+        .chart-wrapper {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        
+        /* New Styles for Dynamic Zip Selector */
+        .zip-selector-container {
+            margin-bottom: 15px;
+        }
+        .zip-selector-label {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-bottom: 5px;
+        }
+        .zip-selector {
+            max-height: 80px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.5rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            background: #fdfdfd;
+        }
+        .zip-selector label {
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            cursor: pointer;
+            background: #fff;
+            padding: 2px 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            user-select: none;
+        }
+        .zip-selector label:hover {
+            background: #f1f5f9;
+        }
+
         .loading {
             position: absolute;
             top: 50%;
@@ -134,36 +183,57 @@
         
         <div class="charts-container">
             <div class="chart-card">
-                <canvas id="bedChart"></canvas>
+                <h3>Trends by Number of Bedrooms</h3>
+                <div class="chart-wrapper">
+                    <canvas id="bedChart"></canvas>
+                </div>
             </div>
+
             <div class="chart-card">
-                <canvas id="zipChart"></canvas>
+                <h3>Trends by Zip Code</h3>
+                <div class="zip-selector-container">
+                    <div class="zip-selector-label">Select zip codes to compare:</div>
+                    <div id="zip-checkboxes" class="zip-selector">
+                        </div>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="zipChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        // Global State
         let rawData = [];
+        let cleanData = [];
         let bedChartInstance = null;
         let zipChartInstance = null;
         let mapInstance = null;
         let mapMarkers = L.layerGroup();
         
+        let allZips = [];
+        let selectedZips = new Set();
+        let isFirstLoad = true;
+        
         // El Paso coordinates
         const EL_PASO_COORDS = [31.7619, -106.4850];
 
-        // Color palettes for charts
+        // Extended Color Palette
         const colors = [
             '#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', 
-            '#0891b2', '#be123c', '#ca8a04', '#4f46e5', '#059669'
+            '#0891b2', '#be123c', '#ca8a04', '#4f46e5', '#059669',
+            '#e11d48', '#0284c7', '#65a30d', '#7c3aed', '#ea580c'
         ];
 
         document.addEventListener('DOMContentLoaded', () => {
             initMap();
             
-            // Listen for metric toggle
+            // Listen for metric toggle (updates both map and charts)
             document.getElementById('metricToggle').addEventListener('change', () => {
-                updateDashboard();
+                processData();
+                updateMap();
+                updateCharts();
             });
 
             // Fetch and parse CSV
@@ -175,7 +245,10 @@
                 complete: function(results) {
                     rawData = results.data;
                     document.getElementById('loading').style.display = 'none';
-                    updateDashboard();
+                    processData();
+                    setupZipSelector();
+                    updateMap();
+                    updateCharts();
                 },
                 error: function(err) {
                     document.getElementById('loading').innerText = "Error loading data. Make sure rent_history.csv exists.";
@@ -197,13 +270,12 @@
             mapMarkers.addTo(mapInstance);
         }
 
-        function updateDashboard() {
+        function processData() {
             if (!rawData || rawData.length === 0) return;
-            
             const metric = document.getElementById('metricToggle').value;
             
             // Clean and compute derived values
-            const cleanData = rawData.map(d => {
+            cleanData = rawData.map(d => {
                 let sqft = parseFloat(d.squareFootage);
                 let price = parseFloat(d.price);
                 return {
@@ -212,23 +284,58 @@
                     date: d.capture_date
                 };
             }).filter(d => d.date && d.price && (metric === 'monthly' || d.price_sqft !== null));
-
-            updateMap(cleanData, metric);
-            updateCharts(cleanData, metric);
         }
 
-        function updateMap(data, metric) {
+        function setupZipSelector() {
+            // Find counts to determine top 5 for defaults
+            const zipCounts = {};
+            cleanData.forEach(d => {
+                if (d.zipCode) zipCounts[d.zipCode] = (zipCounts[d.zipCode] || 0) + 1;
+            });
+            
+            allZips = Object.keys(zipCounts).sort((a, b) => zipCounts[b] - zipCounts[a]);
+            
+            // Default to top 5 zips
+            allZips.slice(0, 5).forEach(z => selectedZips.add(z));
+
+            const zipContainer = document.getElementById('zip-checkboxes');
+            zipContainer.innerHTML = '';
+            
+            allZips.forEach(zip => {
+                const label = document.createElement('label');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = zip;
+                cb.checked = selectedZips.has(zip);
+                
+                // When checked/unchecked, only redraw charts
+                cb.onchange = (e) => {
+                    if (e.target.checked) {
+                        selectedZips.add(zip);
+                    } else {
+                        selectedZips.delete(zip);
+                    }
+                    updateCharts();
+                };
+                
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(` ${zip}`));
+                zipContainer.appendChild(label);
+            });
+        }
+
+        function updateMap() {
+            if (cleanData.length === 0) return;
             mapMarkers.clearLayers();
+            const metric = document.getElementById('metricToggle').value;
 
             // Find the most recent date to display current spatial distribution
-            const dates = [...new Set(data.map(d => d.date))].sort();
+            const dates = [...new Set(cleanData.map(d => d.date))].sort();
             const latestDate = dates[dates.length - 1];
-            
-            const latestData = data.filter(d => d.date === latestDate && d.latitude && d.longitude);
+            const latestData = cleanData.filter(d => d.date === latestDate && d.latitude && d.longitude);
 
             latestData.forEach(d => {
                 const val = metric === 'monthly' ? d.price : d.price_sqft;
-                // Calculate dynamic radius and color based on value
                 const radius = metric === 'monthly' ? Math.min(Math.max(val / 300, 3), 12) : Math.min(Math.max(val * 4, 3), 12);
                 
                 let color = val > (metric === 'monthly' ? 2000 : 1.5) ? '#dc2626' : 
@@ -254,25 +361,46 @@
             });
         }
 
-        function updateCharts(data, metric) {
-            const dates = [...new Set(data.map(d => d.date))].sort();
-            
+        function updateCharts() {
+            if (cleanData.length === 0) return;
+            const metric = document.getElementById('metricToggle').value;
+            const dates = [...new Set(cleanData.map(d => d.date))].sort();
+            const yAxisLabel = metric === 'monthly' ? 'Average Rent ($)' : 'Average Price / SqFt ($)';
+
+            // --- 0. Shared Dataset: Citywide Average ---
+            const citywideData = dates.map(date => {
+                const filtered = cleanData.filter(d => d.date === date);
+                if (filtered.length === 0) return null;
+                const sum = filtered.reduce((acc, curr) => acc + (metric === 'monthly' ? curr.price : curr.price_sqft), 0);
+                return sum / filtered.length;
+            });
+
+            const citywideDataset = {
+                label: 'Citywide Average',
+                data: citywideData,
+                borderColor: '#475569', // Slate gray
+                backgroundColor: '#475569',
+                borderDash: [5, 5], // Creates the dashed line
+                borderWidth: 2,
+                pointRadius: 3,
+                fill: false,
+                tension: 0.1,
+                order: -1 // Ensure dashed line renders on top
+            };
+
             // --- 1. Aggregation by Bedrooms ---
-            // Group beds into: 1, 2, 3, 4+
             const bedGroups = ['1', '2', '3', '4+'];
             const bedDatasets = bedGroups.map((bg, idx) => {
                 const dataPoints = dates.map(date => {
-                    const filtered = data.filter(d => {
+                    const filtered = cleanData.filter(d => {
                         if (d.date !== date) return false;
                         if (bg === '4+') return d.bedrooms >= 4;
                         return Math.floor(d.bedrooms) == bg;
                     });
-                    
                     if (filtered.length === 0) return null;
                     const sum = filtered.reduce((acc, curr) => acc + (metric === 'monthly' ? curr.price : curr.price_sqft), 0);
                     return sum / filtered.length;
                 });
-
                 return {
                     label: `${bg} Bedrooms`,
                     data: dataPoints,
@@ -282,39 +410,31 @@
                     tension: 0.1
                 };
             });
+            bedDatasets.unshift(citywideDataset); // Inject citywide line
 
-            // --- 2. Aggregation by Top 5 Zip Codes ---
-            const zipCounts = {};
-            data.forEach(d => {
-                if (d.zipCode) {
-                    zipCounts[d.zipCode] = (zipCounts[d.zipCode] || 0) + 1;
-                }
-            });
-            const topZips = Object.keys(zipCounts)
-                .sort((a, b) => zipCounts[b] - zipCounts[a])
-                .slice(0, 5);
-
-            const zipDatasets = topZips.map((zip, idx) => {
+            // --- 2. Aggregation by Dynamic Zip Codes ---
+            const activeZips = Array.from(selectedZips);
+            const zipDatasets = activeZips.map((zip, idx) => {
+                // Modulo ensures we don't run out of colors if many are selected
+                const color = colors[idx % colors.length]; 
                 const dataPoints = dates.map(date => {
-                    const filtered = data.filter(d => d.date === date && String(d.zipCode) === String(zip));
+                    const filtered = cleanData.filter(d => d.date === date && String(d.zipCode) === String(zip));
                     if (filtered.length === 0) return null;
                     const sum = filtered.reduce((acc, curr) => acc + (metric === 'monthly' ? curr.price : curr.price_sqft), 0);
                     return sum / filtered.length;
                 });
-
                 return {
                     label: `Zip ${zip}`,
                     data: dataPoints,
-                    borderColor: colors[idx + 5], // offset color palette
-                    backgroundColor: colors[idx + 5],
+                    borderColor: color,
+                    backgroundColor: color,
                     fill: false,
                     tension: 0.1
                 };
             });
+            zipDatasets.unshift(citywideDataset); // Inject citywide line
 
-            const yAxisLabel = metric === 'monthly' ? 'Average Rent ($)' : 'Average Price / SqFt ($)';
-
-            // Render Bed Chart
+            // --- Render Bed Chart ---
             if (bedChartInstance) bedChartInstance.destroy();
             const ctxBed = document.getElementById('bedChart').getContext('2d');
             bedChartInstance = new Chart(ctxBed, {
@@ -323,7 +443,10 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { title: { display: true, text: 'Trends by Number of Bedrooms' } },
+                    plugins: { 
+                        title: { display: false },
+                        legend: { position: 'bottom' }
+                    },
                     scales: {
                         y: { title: { display: true, text: yAxisLabel } },
                         x: { title: { display: true, text: 'Capture Date' } }
@@ -331,7 +454,7 @@
                 }
             });
 
-            // Render Zip Chart
+            // --- Render Zip Chart ---
             if (zipChartInstance) zipChartInstance.destroy();
             const ctxZip = document.getElementById('zipChart').getContext('2d');
             zipChartInstance = new Chart(ctxZip, {
@@ -340,7 +463,10 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { title: { display: true, text: 'Trends by Top 5 Active Zip Codes' } },
+                    plugins: { 
+                        title: { display: false },
+                        legend: { position: 'bottom' }
+                    },
                     scales: {
                         y: { title: { display: true, text: yAxisLabel } },
                         x: { title: { display: true, text: 'Capture Date' } }
