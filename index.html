@@ -97,7 +97,7 @@
             width: 100%;
         }
         
-        /* New Styles for Dynamic Zip Selector */
+        /* Dynamic Zip Selector Styles */
         .zip-selector-container {
             margin-bottom: 15px;
         }
@@ -200,6 +200,13 @@
                     <canvas id="zipChart"></canvas>
                 </div>
             </div>
+
+            <div class="chart-card">
+                <h3>Housing Inventory Breakdown (%)</h3>
+                <div class="chart-wrapper">
+                    <canvas id="inventoryChart"></canvas>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -209,12 +216,12 @@
         let cleanData = [];
         let bedChartInstance = null;
         let zipChartInstance = null;
+        let inventoryChartInstance = null;
         let mapInstance = null;
         let mapMarkers = L.layerGroup();
         
         let allZips = [];
         let selectedZips = new Set();
-        let isFirstLoad = true;
         
         // El Paso coordinates
         const EL_PASO_COORDS = [31.7619, -106.4850];
@@ -229,7 +236,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             initMap();
             
-            // Listen for metric toggle (updates both map and charts)
+            // Listen for metric toggle (updates map and value-based charts)
             document.getElementById('metricToggle').addEventListener('change', () => {
                 processData();
                 updateMap();
@@ -388,7 +395,7 @@
                 order: -1 // Ensure dashed line renders on top
             };
 
-            // --- 1. Aggregation by Bedrooms ---
+            // --- 1. Aggregation by Bedrooms (Line Chart) ---
             const bedGroups = ['1', '2', '3', '4+'];
             const bedDatasets = bedGroups.map((bg, idx) => {
                 const dataPoints = dates.map(date => {
@@ -410,12 +417,35 @@
                     tension: 0.1
                 };
             });
-            bedDatasets.unshift(citywideDataset); // Inject citywide line
+            
+            // --- 2. Inventory Breakdown (Stacked Bar Chart) ---
+            // Calculate % breakdown of total inventory by bedroom count per week
+            const inventoryDatasets = bedGroups.map((bg, idx) => {
+                const dataPoints = dates.map(date => {
+                    const allListingsOnDate = cleanData.filter(d => d.date === date);
+                    if (allListingsOnDate.length === 0) return 0;
+                    
+                    const listingsMatchingBeds = allListingsOnDate.filter(d => {
+                        if (bg === '4+') return d.bedrooms >= 4;
+                        return Math.floor(d.bedrooms) == bg;
+                    });
+                    
+                    // Return percentage (0 to 100)
+                    return (listingsMatchingBeds.length / allListingsOnDate.length) * 100;
+                });
+                
+                return {
+                    label: `${bg} Bedrooms`,
+                    data: dataPoints,
+                    backgroundColor: colors[idx],
+                    // Apply subtle transparency to bar fills
+                    backgroundColor: colors[idx] + 'CC', 
+                };
+            });
 
-            // --- 2. Aggregation by Dynamic Zip Codes ---
+            // --- 3. Aggregation by Dynamic Zip Codes (Line Chart) ---
             const activeZips = Array.from(selectedZips);
             const zipDatasets = activeZips.map((zip, idx) => {
-                // Modulo ensures we don't run out of colors if many are selected
                 const color = colors[idx % colors.length]; 
                 const dataPoints = dates.map(date => {
                     const filtered = cleanData.filter(d => d.date === date && String(d.zipCode) === String(zip));
@@ -432,14 +462,17 @@
                     tension: 0.1
                 };
             });
-            zipDatasets.unshift(citywideDataset); // Inject citywide line
+            
+            // Inject citywide line into line charts
+            const bedLineDatasets = [citywideDataset, ...bedDatasets];
+            const zipLineDatasets = [citywideDataset, ...zipDatasets];
 
             // --- Render Bed Chart ---
             if (bedChartInstance) bedChartInstance.destroy();
             const ctxBed = document.getElementById('bedChart').getContext('2d');
             bedChartInstance = new Chart(ctxBed, {
                 type: 'line',
-                data: { labels: dates, datasets: bedDatasets },
+                data: { labels: dates, datasets: bedLineDatasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -459,7 +492,7 @@
             const ctxZip = document.getElementById('zipChart').getContext('2d');
             zipChartInstance = new Chart(ctxZip, {
                 type: 'line',
-                data: { labels: dates, datasets: zipDatasets },
+                data: { labels: dates, datasets: zipLineDatasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -470,6 +503,46 @@
                     scales: {
                         y: { title: { display: true, text: yAxisLabel } },
                         x: { title: { display: true, text: 'Capture Date' } }
+                    }
+                }
+            });
+
+            // --- Render Inventory Stacked Bar Chart ---
+            if (inventoryChartInstance) inventoryChartInstance.destroy();
+            const ctxInv = document.getElementById('inventoryChart').getContext('2d');
+            inventoryChartInstance = new Chart(ctxInv, {
+                type: 'bar',
+                data: { labels: dates, datasets: inventoryDatasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        title: { display: false },
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + '%';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { 
+                            stacked: true,
+                            title: { display: true, text: 'Capture Date' }
+                        },
+                        y: { 
+                            stacked: true,
+                            min: 0,
+                            max: 100,
+                            title: { display: true, text: 'Percentage of Market (%)' },
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
                     }
                 }
             });
