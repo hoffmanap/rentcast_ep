@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>El Paso Rental Market Trends</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --border: #e2e8f0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        header {
+            background-color: var(--card-bg);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            z-index: 1000;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: var(--text-main);
+        }
+        .controls select {
+            padding: 0.5rem;
+            font-size: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+        }
+        .dashboard {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        .map-container {
+            flex: 1;
+            position: relative;
+            border-right: 1px solid var(--border);
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            background-color: #e5e5e5;
+        }
+        .charts-container {
+            width: 45%;
+            padding: 1.5rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .chart-card {
+            background: var(--card-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            min-height: 300px;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.2rem;
+            font-weight: bold;
+            z-index: 2000;
+            background: white;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        @media (max-width: 1024px) {
+            .dashboard {
+                flex-direction: column;
+                overflow-y: auto;
+            }
+            .map-container {
+                min-height: 400px;
+                flex: none;
+            }
+            .charts-container {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>El Paso Rental Market Dashboard</h1>
+        <div class="controls">
+            <label for="metricToggle"><strong>Metric: </strong></label>
+            <select id="metricToggle">
+                <option value="monthly">Monthly Rent ($)</option>
+                <option value="sqft">Price per Sq Ft ($)</option>
+            </select>
+        </div>
+    </header>
+
+    <div class="dashboard">
+        <div id="loading" class="loading">Loading and parsing data...</div>
+        
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+        
+        <div class="charts-container">
+            <div class="chart-card">
+                <canvas id="bedChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <canvas id="zipChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let rawData = [];
+        let bedChartInstance = null;
+        let zipChartInstance = null;
+        let mapInstance = null;
+        let mapMarkers = L.layerGroup();
+        
+        // El Paso coordinates
+        const EL_PASO_COORDS = [31.7619, -106.4850];
+
+        // Color palettes for charts
+        const colors = [
+            '#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', 
+            '#0891b2', '#be123c', '#ca8a04', '#4f46e5', '#059669'
+        ];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            
+            // Listen for metric toggle
+            document.getElementById('metricToggle').addEventListener('change', () => {
+                updateDashboard();
+            });
+
+            // Fetch and parse CSV
+            Papa.parse("rent_history.csv", {
+                download: true,
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    rawData = results.data;
+                    document.getElementById('loading').style.display = 'none';
+                    updateDashboard();
+                },
+                error: function(err) {
+                    document.getElementById('loading').innerText = "Error loading data. Make sure rent_history.csv exists.";
+                    console.error("Parse Error:", err);
+                }
+            });
+        });
+
+        function initMap() {
+            mapInstance = L.map('map').setView(EL_PASO_COORDS, 11);
+            
+            // Grayscale basemap
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(mapInstance);
+
+            mapMarkers.addTo(mapInstance);
+        }
+
+        function updateDashboard() {
+            if (!rawData || rawData.length === 0) return;
+            
+            const metric = document.getElementById('metricToggle').value;
+            
+            // Clean and compute derived values
+            const cleanData = rawData.map(d => {
+                let sqft = parseFloat(d.squareFootage);
+                let price = parseFloat(d.price);
+                return {
+                    ...d,
+                    price_sqft: (sqft && sqft > 0 && price) ? (price / sqft) : null,
+                    date: d.capture_date
+                };
+            }).filter(d => d.date && d.price && (metric === 'monthly' || d.price_sqft !== null));
+
+            updateMap(cleanData, metric);
+            updateCharts(cleanData, metric);
+        }
+
+        function updateMap(data, metric) {
+            mapMarkers.clearLayers();
+
+            // Find the most recent date to display current spatial distribution
+            const dates = [...new Set(data.map(d => d.date))].sort();
+            const latestDate = dates[dates.length - 1];
+            
+            const latestData = data.filter(d => d.date === latestDate && d.latitude && d.longitude);
+
+            latestData.forEach(d => {
+                const val = metric === 'monthly' ? d.price : d.price_sqft;
+                // Calculate dynamic radius and color based on value
+                const radius = metric === 'monthly' ? Math.min(Math.max(val / 300, 3), 12) : Math.min(Math.max(val * 4, 3), 12);
+                
+                let color = val > (metric === 'monthly' ? 2000 : 1.5) ? '#dc2626' : 
+                            val > (metric === 'monthly' ? 1400 : 1.1) ? '#d97706' : '#16a34a';
+
+                const popupContent = `
+                    <b>${d.formattedAddress || 'Address Unknown'}</b><br>
+                    Zip: ${d.zipCode}<br>
+                    Beds: ${d.bedrooms} | Baths: ${d.bathrooms}<br>
+                    SqFt: ${d.squareFootage || 'N/A'}<br>
+                    Rent: $${d.price}<br>
+                    $/SqFt: ${d.price_sqft ? '$' + d.price_sqft.toFixed(2) : 'N/A'}
+                `;
+
+                L.circleMarker([d.latitude, d.longitude], {
+                    radius: radius,
+                    fillColor: color,
+                    color: "#ffffff",
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.7
+                }).bindPopup(popupContent).addTo(mapMarkers);
+            });
+        }
+
+        function updateCharts(data, metric) {
+            const dates = [...new Set(data.map(d => d.date))].sort();
+            
+            // --- 1. Aggregation by Bedrooms ---
+            // Group beds into: 1, 2, 3, 4+
+            const bedGroups = ['1', '2', '3', '4+'];
+            const bedDatasets = bedGroups.map((bg, idx) => {
+                const dataPoints = dates.map(date => {
+                    const filtered = data.filter(d => {
+                        if (d.date !== date) return false;
+                        if (bg === '4+') return d.bedrooms >= 4;
+                        return Math.floor(d.bedrooms) == bg;
+                    });
+                    
+                    if (filtered.length === 0) return null;
+                    const sum = filtered.reduce((acc, curr) => acc + (metric === 'monthly' ? curr.price : curr.price_sqft), 0);
+                    return sum / filtered.length;
+                });
+
+                return {
+                    label: `${bg} Bedrooms`,
+                    data: dataPoints,
+                    borderColor: colors[idx],
+                    backgroundColor: colors[idx],
+                    fill: false,
+                    tension: 0.1
+                };
+            });
+
+            // --- 2. Aggregation by Top 5 Zip Codes ---
+            const zipCounts = {};
+            data.forEach(d => {
+                if (d.zipCode) {
+                    zipCounts[d.zipCode] = (zipCounts[d.zipCode] || 0) + 1;
+                }
+            });
+            const topZips = Object.keys(zipCounts)
+                .sort((a, b) => zipCounts[b] - zipCounts[a])
+                .slice(0, 5);
+
+            const zipDatasets = topZips.map((zip, idx) => {
+                const dataPoints = dates.map(date => {
+                    const filtered = data.filter(d => d.date === date && String(d.zipCode) === String(zip));
+                    if (filtered.length === 0) return null;
+                    const sum = filtered.reduce((acc, curr) => acc + (metric === 'monthly' ? curr.price : curr.price_sqft), 0);
+                    return sum / filtered.length;
+                });
+
+                return {
+                    label: `Zip ${zip}`,
+                    data: dataPoints,
+                    borderColor: colors[idx + 5], // offset color palette
+                    backgroundColor: colors[idx + 5],
+                    fill: false,
+                    tension: 0.1
+                };
+            });
+
+            const yAxisLabel = metric === 'monthly' ? 'Average Rent ($)' : 'Average Price / SqFt ($)';
+
+            // Render Bed Chart
+            if (bedChartInstance) bedChartInstance.destroy();
+            const ctxBed = document.getElementById('bedChart').getContext('2d');
+            bedChartInstance = new Chart(ctxBed, {
+                type: 'line',
+                data: { labels: dates, datasets: bedDatasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { title: { display: true, text: 'Trends by Number of Bedrooms' } },
+                    scales: {
+                        y: { title: { display: true, text: yAxisLabel } },
+                        x: { title: { display: true, text: 'Capture Date' } }
+                    }
+                }
+            });
+
+            // Render Zip Chart
+            if (zipChartInstance) zipChartInstance.destroy();
+            const ctxZip = document.getElementById('zipChart').getContext('2d');
+            zipChartInstance = new Chart(ctxZip, {
+                type: 'line',
+                data: { labels: dates, datasets: zipDatasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { title: { display: true, text: 'Trends by Top 5 Active Zip Codes' } },
+                    scales: {
+                        y: { title: { display: true, text: yAxisLabel } },
+                        x: { title: { display: true, text: 'Capture Date' } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
