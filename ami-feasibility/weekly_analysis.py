@@ -129,6 +129,38 @@ def classify_feasibility(rent_per_sf, is_high_vacancy):
         return "Neither pencils without subsidy"
 
 
+def compute_property_type_stats(df_all, latest_date):
+    """Single-family AMI check and new-vs-existing construction rent
+    comparison. Returns None (does nothing) if propertyType/listingType
+    columns don't exist yet, or exist but have no non-null values for the
+    current week — which will be true for every run until rent_tracker.py
+    has captured a few weeks of the expanded schema."""
+    week_df = df_all[df_all["capture_date"] == latest_date]
+
+    if "propertyType" not in week_df.columns or week_df["propertyType"].isna().all():
+        return None
+
+    sfr = week_df[week_df["propertyType"] == "Single Family"]
+    if len(sfr) < 10:  # too few to report a meaningful median on
+        return None
+
+    stats = {
+        "n_single_family": len(sfr),
+        "median_rent_single_family": sfr["price"].median(),
+        "pct_below_ami_4p_single_family": round((sfr["price"] < AMI[4]).mean() * 100, 1),
+    }
+
+    if "listingType" in week_df.columns and not week_df["listingType"].isna().all():
+        new_constr = week_df[week_df["listingType"] == "New Construction"]
+        existing = week_df[week_df["listingType"] != "New Construction"]
+        if len(new_constr) >= 5:  # small sample floor — new construction listings are rare
+            stats["n_new_construction"] = len(new_constr)
+            stats["median_rent_new_construction"] = new_constr["price"].median()
+            stats["median_rent_existing_stock"] = existing["price"].median()
+
+    return stats
+
+
 def main():
     # === 1. Load rent data, dedupe, hex-bin ===
     df = pd.read_csv(RENT_HISTORY_PATH)
@@ -180,6 +212,25 @@ def main():
     print(f"\nVacancy data as of {latest_period}, high-vacancy cutoff: {high_vacancy_cutoff:.1%}")
     print(agg["feasibility"].value_counts())
 
+    # === 5b. Property-type breakdown (Single Family AMI check, New vs. existing
+    # construction rent comparison) — only runs once propertyType/listingType
+    # actually have real values. rent_tracker.py started capturing these
+    # going forward; historical rows before that change will have them as
+    # NaN, so this quietly returns None for everything until enough weeks
+    # of real data accumulate. Nothing downstream breaks in the meantime. ===
+    sfr_stats = compute_property_type_stats(df_all, latest_date)
+    if sfr_stats:
+        print(f"\nProperty-type breakdown (n={sfr_stats['n_single_family']} single-family listings):")
+        print(f"  Single-family median rent: ${sfr_stats['median_rent_single_family']:.0f}, "
+              f"{sfr_stats['pct_below_ami_4p_single_family']:.1f}% below 4p AMI")
+        if sfr_stats.get('median_rent_new_construction') is not None:
+            print(f"  New construction median rent: ${sfr_stats['median_rent_new_construction']:.0f} "
+                  f"(n={sfr_stats['n_new_construction']}) vs. existing stock: "
+                  f"${sfr_stats['median_rent_existing_stock']:.0f}")
+    else:
+        print("\nNo propertyType data yet — property-type breakdown will activate "
+              "automatically once rent_tracker.py has captured a few weeks of it")
+
     # === 6. Weekly history append ===
     row = {
         "week_of": latest_date.strftime("%Y-%m-%d"),
@@ -195,6 +246,8 @@ def main():
             / agg["n_listings"].sum() * 100, 1
         ),
     }
+    if sfr_stats:
+        row.update(sfr_stats)
     row_df = pd.DataFrame([row])
     if os.path.isfile(AFFORDABILITY_HISTORY_PATH):
         existing = pd.read_csv(AFFORDABILITY_HISTORY_PATH, dtype={"week_of": str})
