@@ -645,26 +645,52 @@ function updateLegend() {
 }
 updateLegend();
 
-// --- Trend chart, with a hand-drawn-style callout circling the latest point ---
+// --- Trend chart, with a hand-drawn-style callout circling the latest real reading ---
+function toNumOrNull(v) {
+  // PapaParse's dynamicTyping leaves truly empty CSV cells as "" rather than
+  // null, and Chart.js won't skip "" the way it skips null/undefined — so
+  // without this, a blank cell renders as a broken/invisible line instead
+  // of just not drawing that point.
+  if (v === "" || v === null || v === undefined || Number.isNaN(v)) return null;
+  return v;
+}
+
 const latestPointAnnotation = {
   id: 'latestPointAnnotation',
   afterDatasetsDraw(chart) {
-    const ds = chart.data.datasets[1]; // conversion-feasible series
-    const meta = chart.getDatasetMeta(1);
-    if (!meta.data.length) return;
-    const lastPoint = meta.data[meta.data.length - 1];
-    const ctx = chart.ctx;
-    ctx.save();
-    ctx.strokeStyle = '#b23a28';
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    const x = lastPoint.x, y = lastPoint.y, r = 14;
-    ctx.ellipse(x, y, r * 1.15, r, 0.15, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.font = "700 11px Archivo, sans-serif";
-    ctx.fillStyle = '#b23a28';
-    ctx.fillText('latest', x + 18, y - 10);
-    ctx.restore();
+    // Find the last dataset (searching from the most "advanced" series
+    // backward) that actually has a real value at its most recent point —
+    // early weeks won't have feasibility data yet, so this avoids circling
+    // an empty/undefined point.
+    for (let dsIndex = chart.data.datasets.length - 1; dsIndex >= 0; dsIndex--) {
+      const values = chart.data.datasets[dsIndex].data;
+      let lastValidIndex = -1;
+      for (let i = values.length - 1; i >= 0; i--) {
+        if (values[i] !== null && values[i] !== undefined) { lastValidIndex = i; break; }
+      }
+      if (lastValidIndex === -1) continue;
+      // Only annotate if this is genuinely the most recent week overall
+      if (lastValidIndex !== values.length - 1) continue;
+
+      const meta = chart.getDatasetMeta(dsIndex);
+      const point = meta.data[lastValidIndex];
+      if (!point) continue;
+
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.strokeStyle = '#b23a28';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      const x = point.x, y = point.y, r = 13;
+      ctx.ellipse(x, y, r * 1.15, r, 0.15, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = "700 11px Archivo, sans-serif";
+      ctx.fillStyle = '#b23a28';
+      ctx.textAlign = (x > chart.chartArea.right - 60) ? 'right' : 'left';
+      ctx.fillText('latest', x + (ctx.textAlign === 'right' ? -18 : 18), y - 10);
+      ctx.restore();
+      return; // only annotate once, on the first dataset (from the end) with real data
+    }
   }
 };
 
@@ -683,19 +709,19 @@ Papa.parse('ami_affordability_history.csv', {
         datasets: [
           {
             label: '% below income limit (4-person)',
-            data: rows.map(r => r.pct_below_ami_4p),
+            data: rows.map(r => toNumOrNull(r.pct_below_ami_4p)),
             borderColor: '#2b4c7e', backgroundColor: 'rgba(43,76,126,0.08)',
             fill: true, tension: 0.15, borderWidth: 2.5, pointRadius: 2.5,
           },
           {
             label: '% conversion-feasible only',
-            data: rows.map(r => r.pct_conversion_feasible_only),
+            data: rows.map(r => toNumOrNull(r.pct_conversion_feasible_only)),
             borderColor: '#c08a2e', backgroundColor: 'rgba(192,138,46,0.08)',
             fill: true, tension: 0.15, borderWidth: 2.5, pointRadius: 2.5,
           },
           {
             label: '% new-construction feasible',
-            data: rows.map(r => r.pct_new_construction_feasible),
+            data: rows.map(r => toNumOrNull(r.pct_new_construction_feasible)),
             borderColor: '#b23a28', backgroundColor: 'rgba(178,58,40,0.08)',
             fill: true, tension: 0.15, borderWidth: 2.5, pointRadius: 2.5,
           }
