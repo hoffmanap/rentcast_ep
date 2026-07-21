@@ -33,3 +33,13 @@ This project runs entirely client-side and is hosted via **GitHub Pages**, meani
 * **PapaParse** - Fast, in-browser CSV processing
 * **Leaflet.js** - Interactive mapping (using CartoDB basemaps)
 * **Chart.js** - Responsive time-series data visualization
+
+## 🏘️ Related: AMI & Development Feasibility Analysis
+
+A deeper analysis of this data lives in [`ami-feasibility/`](./ami-feasibility) — comparing
+market rents to HUD income limits and to what it actually costs to build or convert middle
+housing in El Paso.
+
+**Live page:** https://hoffmanap.github.io/rentcast_ep/ami-feasibility/
+
+---
