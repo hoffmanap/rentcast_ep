@@ -1,25 +1,28 @@
 """
 weekly_analysis.py
 --------------------
-The single script the Thursday GitHub Action runs. Replaces the earlier
-separate ami_affordability.py / join_vacancy_feasibility.py /
-generate_hex_tract_lookup.py — consolidated so there's one file, one job,
-one order of operations.
+The single script the Thursday GitHub Action runs.
 
 What it does, in order:
-  1. Loads rent_history.csv, dedupes to latest listing per property, hex-bins (H3 res 8)
+  1. Loads rent_history.csv, reconstructs the point-in-time active-listing
+     snapshot as of the latest capture_date, hex-bins it (H3 res 8)
   2. Computes AMI comparison (1-4 person households) for each hex
   3. Geocodes each hex centroid to a census tract GEOID via the free Census
-     Geocoder API — only for hexes not already in hex_tract_lookup.csv, so
-     this is fast after the first run. (This step needs real internet access,
-     which GitHub Actions runners have — it will NOT run in a sandboxed
-     analysis environment without that access.)
-  4. Joins tract-level USPS vacancy (usps_vacancy_trend_by_tract.csv) and
-     housing-demand signals (household_demand_signals_by_tract.csv)
+     Geocoder API — only for hexes not already in hex_tract_lookup.csv
+  4. Joins tract-level USPS vacancy and housing-demand signals
   5. Classifies each hex's development feasibility (4-unit vs. 8-unit
      thresholds, the latter applied in high-vacancy tracts)
-  6. Appends one row to ami_affordability_history.csv for this week
+  6. Appends/updates one row in ami_affordability_history.csv for this week
   7. Writes el_paso_rent_vs_ami.geojson for the map
+
+compute_snapshot() is factored out so the exact same logic can be reused by
+backfill_history.py to rebuild every historical week consistently — see
+that script for why: the previous version computed "this week's" stats
+from an all-time cumulative dedup regardless of which week triggered the
+run, which meant every week's feasibility numbers actually reflected
+today's full listing history, not that week's point-in-time market. That
+also made backfilling historical weeks on the same basis impossible
+without this refactor.
 
 Requires: pandas, h3, requests
     pip install pandas h3 requests
@@ -33,10 +36,6 @@ import json
 import os
 
 # --- File paths ---
-# rent_history.csv stays at the REPO ROOT, since rent_tracker.py fetches into it there.
-# Everything specific to this project lives under ami-feasibility/, so this script
-# must be run from the repo root (the workflow does this) — that's also why
-# RENT_HISTORY_PATH has no folder prefix but the rest do.
 RENT_HISTORY_PATH = "rent_history.csv"
 VACANCY_PATH = "ami-feasibility/usps_vacancy_trend_by_tract.csv"
 DEMAND_PATH = "ami-feasibility/household_demand_signals_by_tract.csv"
@@ -46,23 +45,14 @@ GEOJSON_OUTPUT_PATH = "ami-feasibility/el_paso_rent_vs_ami.geojson"
 
 RESOLUTION = 8
 
-# --- AMI thresholds — El Paso, TX MSA, FY2025 HUD MFI $72,800 ---
-# Update EL_PASO_MFI each spring when HUD publishes new limits
-# (huduser.gov/portal/datasets/il.html)
 EL_PASO_MFI = 72800
 HH_SIZE_FACTORS = {1: 0.70, 2: 0.80, 3: 0.90, 4: 1.00}
 AMI = {k: EL_PASO_MFI * v * 0.30 / 12 for k, v in HH_SIZE_FACTORS.items()}
 
-# --- Feasibility thresholds, derived from the proforma sensitivity model ---
-# ($/SF/month, market-rate scenario; see README methodology section)
 THRESHOLDS_4_UNIT = {"feasible": 1.532, "remodel_feasible": 0.994, "remodel_subsidy_floor": 0.942}
 THRESHOLDS_8_UNIT = {"feasible": 1.395, "remodel_feasible": 0.857, "remodel_subsidy_floor": 0.805}
 
-# Data-driven default: top quartile of El Paso tract-level residential
-# vacancy. ADJUST if the project settles on a different "high-vacancy"
-# definition for the 8-unit conversion assumption.
 HIGH_VACANCY_PERCENTILE = 0.75
-
 GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
 
 
@@ -88,8 +78,9 @@ def geocode_tract(lat, lon, retries=3):
 
 
 def get_hex_tract_lookup(hex_ids):
-    """Geocode each hex centroid, reusing cached results so only new
-    hexes (new geographic areas appearing in the listings) get looked up."""
+    """Geocode each hex centroid, reusing cached results. The hex→tract
+    mapping is purely geographic and never changes week to week, which is
+    exactly why the same cache works for backfilling historical weeks too."""
     if os.path.isfile(HEX_TRACT_CACHE_PATH):
         cache = pd.read_csv(HEX_TRACT_CACHE_PATH, dtype={"geoid": str})
     else:
@@ -97,8 +88,8 @@ def get_hex_tract_lookup(hex_ids):
     cached_ids = set(cache["hex_id"])
 
     new_hex_ids = [h for h in hex_ids if h not in cached_ids]
-    print(f"{len(hex_ids)} hexes total, {len(new_hex_ids)} new — geocoding those now")
-
+    if new_hex_ids:
+        print(f"{len(hex_ids)} hexes total, {len(new_hex_ids)} new — geocoding those now")
     new_rows = []
     for i, hex_id in enumerate(new_hex_ids):
         lat, lon = h3.cell_to_latlng(hex_id)
@@ -129,19 +120,31 @@ def classify_feasibility(rent_per_sf, is_high_vacancy):
         return "Neither pencils without subsidy"
 
 
-def compute_property_type_stats(df_all, latest_date):
-    """Single-family AMI check and new-vs-existing construction rent
-    comparison. Returns None (does nothing) if propertyType/listingType
-    columns don't exist yet, or exist but have no non-null values for the
-    current week — which will be true for every run until rent_tracker.py
-    has captured a few weeks of the expanded schema."""
-    week_df = df_all[df_all["capture_date"] == latest_date]
+def build_point_in_time_snapshot(raw_df, as_of_date):
+    """What was active AS OF a given week: for each property, take its most
+    recent capture on or before as_of_date, ignoring anything captured
+    later. This is the single source of truth for every stat computed for
+    that week — n_listings, median rent, AMI comparison, feasibility, and
+    property-type breakdown all use this same snapshot now, rather than the
+    old split where feasibility used an all-time cumulative dedup but
+    median_rent/property-type used just that week's raw fetch batch."""
+    snap = raw_df[raw_df["capture_date"] <= as_of_date]
+    snap = snap.sort_values("capture_date").drop_duplicates(subset="id", keep="last")
+    snap = snap.dropna(subset=["latitude", "longitude", "price"])
+    snap = snap[snap["bedrooms"] <= 6]
+    return snap
 
-    if "propertyType" not in week_df.columns or week_df["propertyType"].isna().all():
+
+def compute_property_type_stats(snapshot):
+    """Single-family AMI check and new-vs-existing construction rent
+    comparison. Returns None if propertyType/listingType don't exist yet or
+    have no real values in this snapshot — true for any week before
+    rent_tracker.py started capturing them."""
+    if "propertyType" not in snapshot.columns or snapshot["propertyType"].isna().all():
         return None
 
-    sfr = week_df[week_df["propertyType"] == "Single Family"]
-    if len(sfr) < 10:  # too few to report a meaningful median on
+    sfr = snapshot[snapshot["propertyType"] == "Single Family"]
+    if len(sfr) < 10:
         return None
 
     stats = {
@@ -150,10 +153,10 @@ def compute_property_type_stats(df_all, latest_date):
         "pct_below_ami_4p_single_family": round((sfr["price"] < AMI[4]).mean() * 100, 1),
     }
 
-    if "listingType" in week_df.columns and not week_df["listingType"].isna().all():
-        new_constr = week_df[week_df["listingType"] == "New Construction"]
-        existing = week_df[week_df["listingType"] != "New Construction"]
-        if len(new_constr) >= 5:  # small sample floor — new construction listings are rare
+    if "listingType" in snapshot.columns and not snapshot["listingType"].isna().all():
+        new_constr = snapshot[snapshot["listingType"] == "New Construction"]
+        existing = snapshot[snapshot["listingType"] != "New Construction"]
+        if len(new_constr) >= 5:
             stats["n_new_construction"] = len(new_constr)
             stats["median_rent_new_construction"] = new_constr["price"].median()
             stats["median_rent_existing_stock"] = existing["price"].median()
@@ -161,81 +164,48 @@ def compute_property_type_stats(df_all, latest_date):
     return stats
 
 
-def main():
-    # === 1. Load rent data, dedupe, hex-bin ===
-    df = pd.read_csv(RENT_HISTORY_PATH)
-    df["capture_date"] = pd.to_datetime(df["capture_date"])
-    latest_date = df["capture_date"].max()
-    df_all = df.sort_values("capture_date").drop_duplicates(subset="id", keep="last")
-    df_all = df_all.dropna(subset=["latitude", "longitude", "price"])
-    df_all = df_all[df_all["bedrooms"] <= 6]
-    df_all["hex_id"] = df_all.apply(lambda r: h3.latlng_to_cell(r.latitude, r.longitude, RESOLUTION), axis=1)
+def compute_snapshot(snapshot, as_of_date, hex_tract_lookup, vacancy_df, demand_df, build_geojson=False):
+    """The full pipeline for one point-in-time snapshot: hex-bin, AMI
+    comparison, tract/vacancy/demand join, feasibility classification,
+    property-type stats. Returns (row_dict, geojson_dict_or_None).
+    Shared by both the live weekly run and the historical backfill so every
+    week is computed identically."""
+    snap = snapshot.copy()
+    snap["hex_id"] = snap.apply(lambda r: h3.latlng_to_cell(r.latitude, r.longitude, RESOLUTION), axis=1)
 
-    sqft_df = df_all.dropna(subset=["squareFootage"])
+    sqft_df = snap.dropna(subset=["squareFootage"])
     sqft_df = sqft_df[sqft_df["squareFootage"] > 0].copy()
     sqft_df["rent_per_sf"] = sqft_df["price"] / sqft_df["squareFootage"]
     sqft_df = sqft_df[(sqft_df["rent_per_sf"] > 0.3) & (sqft_df["rent_per_sf"] < 5)]
 
-    agg = df_all.groupby("hex_id").agg(median_rent=("price", "median"), n_listings=("price", "count")).reset_index()
+    agg = snap.groupby("hex_id").agg(median_rent=("price", "median"), n_listings=("price", "count")).reset_index()
     sf_agg = sqft_df.groupby("hex_id")["rent_per_sf"].median().reset_index().rename(columns={"rent_per_sf": "median_rent_per_sf"})
     agg = agg.merge(sf_agg, on="hex_id", how="left")
 
-    # === 2. AMI comparison ===
     for hh, thresh in AMI.items():
         agg[f"pct_diff_ami_{hh}p"] = (agg["median_rent"] - thresh) / thresh * 100
 
-    # === 3. Hex -> tract geocoding (cached) ===
-    lookup = get_hex_tract_lookup(agg["hex_id"].tolist())
-    agg = agg.merge(lookup, on="hex_id", how="left")
-    n_unmatched = agg["geoid"].isna().sum()
-    if n_unmatched:
-        print(f"WARNING: {n_unmatched} of {len(agg)} hexes have no tract match "
-              f"(likely just outside El Paso County)")
+    agg = agg.merge(hex_tract_lookup, on="hex_id", how="left")
 
-    # === 4. Vacancy + demand joins ===
-    vdf = pd.read_csv(VACANCY_PATH, dtype={"tract": str})
-    latest_period = vdf["period"].max()
-    vdf_latest = vdf[vdf["period"] == latest_period][["tract", "pct_residential_vacant"]]
+    latest_period = vacancy_df["period"].max()
+    vdf_latest = vacancy_df[vacancy_df["period"] == latest_period][["tract", "pct_residential_vacant"]]
     vdf_latest = vdf_latest.rename(columns={"tract": "geoid", "pct_residential_vacant": "vacancy_rate"})
     agg = agg.merge(vdf_latest, on="geoid", how="left")
 
     high_vacancy_cutoff = vdf_latest["vacancy_rate"].quantile(HIGH_VACANCY_PERCENTILE)
     agg["is_high_vacancy"] = (agg["vacancy_rate"] >= high_vacancy_cutoff).fillna(False)
 
-    ddf = pd.read_csv(DEMAND_PATH, dtype={"tract": str})
-    ddf = ddf[["tract", "demand_score", "pct_cost_burdened"]].rename(columns={"tract": "geoid"})
+    ddf = demand_df[["tract", "demand_score", "pct_cost_burdened"]].rename(columns={"tract": "geoid"})
     agg = agg.merge(ddf, on="geoid", how="left")
 
-    # === 5. Feasibility classification ===
     agg["feasibility"] = agg.apply(lambda r: classify_feasibility(r["median_rent_per_sf"], r["is_high_vacancy"]), axis=1)
 
-    print(f"\nVacancy data as of {latest_period}, high-vacancy cutoff: {high_vacancy_cutoff:.1%}")
-    print(agg["feasibility"].value_counts())
+    sfr_stats = compute_property_type_stats(snap)
 
-    # === 5b. Property-type breakdown (Single Family AMI check, New vs. existing
-    # construction rent comparison) — only runs once propertyType/listingType
-    # actually have real values. rent_tracker.py started capturing these
-    # going forward; historical rows before that change will have them as
-    # NaN, so this quietly returns None for everything until enough weeks
-    # of real data accumulate. Nothing downstream breaks in the meantime. ===
-    sfr_stats = compute_property_type_stats(df_all, latest_date)
-    if sfr_stats:
-        print(f"\nProperty-type breakdown (n={sfr_stats['n_single_family']} single-family listings):")
-        print(f"  Single-family median rent: ${sfr_stats['median_rent_single_family']:.0f}, "
-              f"{sfr_stats['pct_below_ami_4p_single_family']:.1f}% below 4p AMI")
-        if sfr_stats.get('median_rent_new_construction') is not None:
-            print(f"  New construction median rent: ${sfr_stats['median_rent_new_construction']:.0f} "
-                  f"(n={sfr_stats['n_new_construction']}) vs. existing stock: "
-                  f"${sfr_stats['median_rent_existing_stock']:.0f}")
-    else:
-        print("\nNo propertyType data yet — property-type breakdown will activate "
-              "automatically once rent_tracker.py has captured a few weeks of it")
-
-    # === 6. Weekly history append ===
     row = {
-        "week_of": latest_date.strftime("%Y-%m-%d"),
+        "week_of": as_of_date.strftime("%Y-%m-%d"),
         "n_listings": int(agg["n_listings"].sum()),
-        "median_rent": df_all[df_all["capture_date"] == latest_date]["price"].median(),
+        "median_rent": snap["price"].median(),
         "pct_below_ami_4p": round((agg["pct_diff_ami_4p"] < 0).mul(agg["n_listings"]).sum() / agg["n_listings"].sum() * 100, 1),
         "pct_conversion_feasible_only": round(
             agg.loc[agg["feasibility"] == "Conversion feasible, new construction not", "n_listings"].sum()
@@ -248,15 +218,39 @@ def main():
     }
     if sfr_stats:
         row.update(sfr_stats)
+
+    geojson_dict = None
+    if build_geojson:
+        features = []
+        for _, r in agg.iterrows():
+            boundary = h3.cell_to_boundary(r.hex_id)
+            coords = [[lon, lat] for lat, lon in boundary]
+            coords.append(coords[0])
+            props = {
+                "hex_id": r.hex_id,
+                "median_rent": round(r.median_rent),
+                "n_listings": int(r.n_listings),
+                "median_rent_per_sf": None if pd.isna(r.median_rent_per_sf) else round(r.median_rent_per_sf, 2),
+                "geoid": r.geoid,
+                "vacancy_rate": None if pd.isna(r.vacancy_rate) else round(r.vacancy_rate, 4),
+                "is_high_vacancy": bool(r.is_high_vacancy),
+                "demand_score": None if pd.isna(r.demand_score) else round(r.demand_score, 3),
+                "feasibility": r.feasibility,
+            }
+            for hh in [1, 2, 3, 4]:
+                props[f"pct_diff_ami_{hh}p"] = round(r[f"pct_diff_ami_{hh}p"], 1)
+                props[f"ami_threshold_{hh}p"] = round(AMI[hh])
+            features.append({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [coords]}, "properties": props})
+        geojson_dict = {"type": "FeatureCollection", "features": features}
+
+    return row, geojson_dict
+
+
+def upsert_week_row(row):
     row_df = pd.DataFrame([row])
     if os.path.isfile(AFFORDABILITY_HISTORY_PATH):
         existing = pd.read_csv(AFFORDABILITY_HISTORY_PATH, dtype={"week_of": str})
         if row["week_of"] in existing["week_of"].values:
-            # Overwrite rather than skip — an existing row for this week
-            # might be a stale partial backfill (e.g. AMI-only, no
-            # feasibility columns yet), and this run's numbers are more
-            # complete. Dropping and re-adding is simpler than patching
-            # individual cells and handles schema growth the same way.
             existing = existing[existing["week_of"] != row["week_of"]]
             print(f"Replacing existing row for week {row['week_of']} with fresh computation")
         combined = pd.concat([existing, row_df], ignore_index=True).sort_values("week_of")
@@ -266,31 +260,34 @@ def main():
         row_df.to_csv(AFFORDABILITY_HISTORY_PATH, index=False)
         print(f"Created {AFFORDABILITY_HISTORY_PATH} with first week's data")
 
-    # === 7. GeoJSON export ===
-    features = []
-    for _, r in agg.iterrows():
-        boundary = h3.cell_to_boundary(r.hex_id)
-        coords = [[lon, lat] for lat, lon in boundary]
-        coords.append(coords[0])
-        props = {
-            "hex_id": r.hex_id,
-            "median_rent": round(r.median_rent),
-            "n_listings": int(r.n_listings),
-            "median_rent_per_sf": None if pd.isna(r.median_rent_per_sf) else round(r.median_rent_per_sf, 2),
-            "geoid": r.geoid,
-            "vacancy_rate": None if pd.isna(r.vacancy_rate) else round(r.vacancy_rate, 4),
-            "is_high_vacancy": bool(r.is_high_vacancy),
-            "demand_score": None if pd.isna(r.demand_score) else round(r.demand_score, 3),
-            "feasibility": r.feasibility,
-        }
-        for hh in [1, 2, 3, 4]:
-            props[f"pct_diff_ami_{hh}p"] = round(r[f"pct_diff_ami_{hh}p"], 1)
-            props[f"ami_threshold_{hh}p"] = round(AMI[hh])
-        features.append({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [coords]}, "properties": props})
+
+def main():
+    df = pd.read_csv(RENT_HISTORY_PATH)
+    df["capture_date"] = pd.to_datetime(df["capture_date"])
+    latest_date = df["capture_date"].max()
+
+    snapshot = build_point_in_time_snapshot(df, latest_date)
+    snapshot_hex_ids = snapshot.apply(lambda r: h3.latlng_to_cell(r.latitude, r.longitude, RESOLUTION), axis=1).tolist()
+    hex_tract_lookup = get_hex_tract_lookup(sorted(set(snapshot_hex_ids)))
+
+    vacancy_df = pd.read_csv(VACANCY_PATH, dtype={"tract": str})
+    demand_df = pd.read_csv(DEMAND_PATH, dtype={"tract": str})
+
+    row, geojson_dict = compute_snapshot(snapshot, latest_date, hex_tract_lookup, vacancy_df, demand_df, build_geojson=True)
+
+    print(f"\nWeek of {row['week_of']}: {row['n_listings']} listings, "
+          f"{row['pct_below_ami_4p']}% below 4p AMI, "
+          f"{row['pct_conversion_feasible_only']}% conversion-feasible only, "
+          f"{row['pct_new_construction_feasible']}% new-construction feasible")
+    if "n_single_family" in row:
+        print(f"Single-family: n={row['n_single_family']}, median rent ${row['median_rent_single_family']:.0f}, "
+              f"{row['pct_below_ami_4p_single_family']}% below 4p AMI")
+
+    upsert_week_row(row)
 
     with open(GEOJSON_OUTPUT_PATH, "w") as f:
-        json.dump({"type": "FeatureCollection", "features": features}, f)
-    print(f"\nWrote {len(features)} hexes to {GEOJSON_OUTPUT_PATH}")
+        json.dump(geojson_dict, f)
+    print(f"Wrote {len(geojson_dict['features'])} hexes to {GEOJSON_OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
