@@ -35,4 +35,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ami-feasibility/ami_affordability_history.csv ami-feasibility/el_paso_rent_vs_ami.geojson ami-feasibility/hex_tract_lookup.csv
           git diff --staged --quiet || git commit -m "Weekly AMI & feasibility update ($(date +%Y-%m-%d))"
-          git push
+          # If someone else pushed to main while this job was running, rebase
+          # our commit on top of theirs instead of failing outright. Retry a
+          # few times in case of back-to-back pushes.
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main && git push && break
+            echo "Push attempt $i failed, retrying..."
+            sleep 5
+          done
