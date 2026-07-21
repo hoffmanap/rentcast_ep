@@ -1,0 +1,38 @@
+name: Weekly AMI & Feasibility Summary
+
+on:
+  schedule:
+    # Thursday 13:00 UTC — a day after the Wednesday rent_tracker.py fetch
+    - cron: '0 13 * * 4'
+  workflow_dispatch:  # manual "Run workflow" button in the Actions tab
+
+permissions:
+  contents: write  # needed to commit results back to the repo
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pandas h3 requests
+
+      - name: Run weekly analysis
+        # Run from repo root so rent_history.csv (root) and the
+        # ami-feasibility/ paths inside the script both resolve correctly
+        run: python ami-feasibility/weekly_analysis.py
+
+      - name: Commit updated data files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ami-feasibility/ami_affordability_history.csv ami-feasibility/el_paso_rent_vs_ami.geojson ami-feasibility/hex_tract_lookup.csv
+          git diff --staged --quiet || git commit -m "Weekly AMI & feasibility update ($(date +%Y-%m-%d))"
+          git push
