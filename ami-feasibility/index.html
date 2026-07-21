@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>El Paso: Why the Rent Isn't the Problem</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=Archivo:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink: #17181a;
+    --paper: #fbfaf7;
+    --blue: #2b4c7e;
+    --blue-lt: #a9bdd8;
+    --brick: #b23a28;
+    --brick-lt: #e3a89a;
+    --ochre: #c08a2e;
+    --highlight: #f7e35a;
+    --line: #d8d5cc;
+    --gray-text: #55534c;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      linear-gradient(var(--paper), var(--paper)),
+      repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(0,0,0,0.028) 28px),
+      repeating-linear-gradient(90deg, transparent, transparent 27px, rgba(0,0,0,0.028) 28px);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-size: 16px;
+  }
+  a { color: var(--blue); }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+  .wrap-wide { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+
+  em { font-style: normal; background: linear-gradient(to bottom, transparent 62%, var(--highlight) 62%); }
+  strong { font-weight: 700; }
+
+  /* --- Nav --- */
+  nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 24px; border-bottom: 3px solid var(--ink);
+    font-family: 'Archivo', sans-serif; font-size: 12px;
+    letter-spacing: 0.04em; text-transform: uppercase; font-weight: 700;
+  }
+  nav a { color: var(--ink); text-decoration: none; }
+  nav a:hover { color: var(--blue); }
+  .story-no {
+    display: inline-block; background: var(--ink); color: var(--paper);
+    font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 11px;
+    padding: 3px 8px; border-radius: 2px; margin-right: 8px;
+  }
+
+  /* --- Hero --- */
+  .hero { padding: 56px 24px 20px; text-align: center; }
+  .kicker {
+    font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--brick); margin-bottom: 18px;
+  }
+  .headline {
+    font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(30px, 5.4vw, 54px);
+    line-height: 1.04; letter-spacing: -0.01em; max-width: 780px; margin: 0 auto 30px;
+  }
+  .hero-number-row {
+    display: flex; align-items: baseline; justify-content: center; gap: 4px; position: relative;
+  }
+  .hero-number {
+    font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(84px, 24vw, 220px);
+    line-height: 0.86; letter-spacing: -0.02em; color: var(--ink);
+    font-variant-numeric: tabular-nums; position: relative; display: inline-block;
+  }
+  .hero-number svg.circle-annot {
+    position: absolute; top: -8%; left: -6%; width: 112%; height: 118%;
+    pointer-events: none;
+  }
+  .hero-deck {
+    font-family: 'Inter', sans-serif; font-weight: 500;
+    font-size: clamp(16px, 2.4vw, 19px); line-height: 1.5; max-width: 560px;
+    margin: 8px auto 0; color: var(--gray-text);
+  }
+  .hero-caption {
+    font-family: 'Archivo', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #8c8879; margin-top: 16px;
+  }
+
+  /* --- Prose sections --- */
+  .prose-section { padding: 44px 24px; }
+  .prose-section.bordered-top { border-top: 3px solid var(--ink); }
+  .prose-section h2 {
+    font-family: 'Fraunces', serif; font-weight: 800; font-size: clamp(24px, 3.6vw, 32px);
+    line-height: 1.15; margin: 0 0 18px; max-width: 700px;
+  }
+  .prose-section p {
+    font-size: 16.5px; line-height: 1.65; color: var(--ink); margin: 0 0 16px;
+  }
+  .prose-section p.lede {
+    font-family: 'Fraunces', serif; font-weight: 500; font-size: 20px; line-height: 1.5;
+    color: var(--ink);
+  }
+  .drop-tag {
+    display: inline-block; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 10.5px;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); background: var(--blue);
+    padding: 3px 9px; border-radius: 2px; margin-bottom: 14px;
+  }
+  .drop-tag.brick { background: var(--brick); }
+  .drop-tag.ochre { background: var(--ochre); }
+
+  ul.reform-list { padding-left: 0; list-style: none; margin: 20px 0; }
+  ul.reform-list li {
+    border-left: 4px solid var(--blue); padding: 4px 0 4px 16px; margin-bottom: 16px; font-size: 16px; line-height: 1.55;
+  }
+  ul.reform-list li strong { font-family: 'Fraunces', serif; font-size: 17px; }
+
+  /* --- Comparison table --- */
+  table.data-table {
+    width: 100%; border-collapse: collapse; margin: 22px 0; font-size: 14.5px;
+  }
+  table.data-table th {
+    font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.05em;
+    text-transform: uppercase; text-align: left; border-bottom: 3px solid var(--ink);
+    padding: 8px 10px; color: var(--gray-text);
+  }
+  table.data-table td {
+    padding: 9px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums;
+  }
+  table.data-table tr.flip td { background: var(--highlight); }
+  table.data-table td.num { text-align: right; }
+
+  /* --- Toggles --- */
+  .toggle-section { padding: 8px 24px 8px; border-top: 3px solid var(--ink); }
+  .toggle-label {
+    font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: #8c8879; display: block; margin: 24px 0 10px;
+  }
+  .toggle-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .tab-btn {
+    font-family: 'Archivo', sans-serif; font-size: 14px; font-weight: 700;
+    background: var(--paper); border: 2px solid var(--ink); border-radius: 3px;
+    padding: 9px 16px; cursor: pointer; color: var(--ink);
+  }
+  .tab-btn.active { background: var(--ink); color: var(--paper); }
+  .tab-btn:hover:not(.active) { background: #efece4; }
+  .hh-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .hh-btn {
+    font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 13px;
+    background: var(--paper); border: 2px solid var(--line); border-radius: 50%;
+    width: 38px; height: 38px; cursor: pointer; color: var(--gray-text);
+  }
+  .hh-btn.active { background: var(--blue); color: var(--paper); border-color: var(--blue); }
+  .hh-btn:hover:not(.active) { border-color: var(--ink); color: var(--ink); }
+
+  /* --- Map card --- */
+  .map-section { padding: 8px 24px 0; }
+  .map-card {
+    position: relative; border: 3px solid var(--ink); border-radius: 2px; overflow: hidden;
+  }
+  #map { height: 62vh; width: 100%; min-height: 420px; }
+  .map-caption {
+    font-family: 'Fraunces', serif; font-style: italic; font-weight: 500; font-size: 15.5px;
+    color: var(--gray-text); padding: 14px 4px 4px; max-width: 640px;
+  }
+  .legend {
+    position: absolute; bottom: 14px; right: 14px; background: rgba(251,250,247,0.96);
+    border: 2px solid var(--ink); padding: 10px 13px; border-radius: 2px;
+    font-family: 'Archivo', sans-serif; font-size: 10.5px; font-weight: 500; line-height: 1.8; z-index: 500;
+  }
+  .legend-title { font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px; font-size: 10px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 6px; vertical-align: middle; border-radius: 2px; border: 1px solid rgba(0,0,0,0.15); }
+
+  /* --- Stat strip --- */
+  .stat-strip { display: flex; gap: 0; border-top: 3px solid var(--ink); border-bottom: 1px solid var(--line); margin-top: 24px; }
+  .stat-block { flex: 1; padding: 22px 16px; text-align: center; }
+  .stat-block + .stat-block { border-left: 1px solid var(--line); }
+  .stat-block .num { font-family: 'Fraunces', serif; font-weight: 800; font-size: 32px; display: block; }
+  .stat-block .label { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 10.5px; color: var(--gray-text); margin-top: 4px; letter-spacing: 0.02em; text-transform: uppercase; }
+
+  /* --- Pull quote --- */
+  .pullquote-section { padding: 56px 24px; }
+  .pullquote {
+    font-family: 'Fraunces', serif; font-weight: 700; font-size: clamp(23px, 3.6vw, 34px);
+    line-height: 1.32; max-width: 720px; margin: 0 auto; text-align: left;
+    position: relative; padding: 8px 0 8px 24px; border-left: 6px solid var(--ink);
+  }
+  .pullquote-source {
+    font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--gray-text); margin-top: 16px; max-width: 720px;
+    margin-left: auto; margin-right: auto; padding-left: 24px;
+  }
+
+  /* --- Trend section --- */
+  .trend-section { padding: 8px 24px 60px; border-top: 3px solid var(--ink); }
+  #trend-chart { max-height: 340px; }
+  .loading { font-family: 'Archivo', sans-serif; font-size: 12px; color: #8c8879; }
+
+  /* --- Methodology footnotes --- */
+  .footnotes { background: #efece4; border-top: 3px solid var(--ink); padding: 40px 24px 56px; }
+  .footnotes h3 {
+    font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 13px; letter-spacing: 0.06em;
+    text-transform: uppercase; margin: 28px 0 10px;
+  }
+  .footnotes h3:first-child { margin-top: 0; }
+  .footnotes ul { margin: 0 0 8px; padding-left: 20px; }
+  .footnotes li { font-size: 14px; line-height: 1.6; color: var(--gray-text); margin-bottom: 10px; }
+  .footnotes li strong { color: var(--ink); }
+
+  footer {
+    border-top: 3px solid var(--ink); padding: 24px 24px 48px;
+    font-family: 'Archivo', sans-serif; font-size: 11px; color: var(--gray-text); line-height: 1.8;
+    font-weight: 500;
+  }
+  footer a { color: var(--gray-text); }
+
+  @media (max-width: 640px) {
+    .stat-strip { flex-direction: column; }
+    .stat-block + .stat-block { border-left: none; border-top: 1px solid var(--line); }
+    .hero { padding: 40px 20px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <span><span class="story-no">#01</span>El Paso Housing Lab</span>
+  <a href="../index.html">Rent trends by bedroom &amp; zip →</a>
+</nav>
+
+<div class="hero">
+  <div class="kicker">A weekly data story on rent, income limits, and what gets built</div>
+  <h1 class="headline">El Paso's rent isn't the affordability problem.<br>It's the construction problem.</h1>
+  <div class="hero-number-row">
+    <div class="hero-number" id="hero-number">–</div>
+  </div>
+  <p class="hero-deck" id="hero-deck">Loading this week's numbers…</p>
+  <p class="hero-caption" id="hero-caption"></p>
+</div>
+
+<div class="prose-section bordered-top wrap">
+  <span class="drop-tag">Start here</span>
+  <p class="lede">
+    Market rents in El Paso are, in most cases, already below what a household could afford
+    at 100% of the area median income (AMI). That sounds like good news. It's actually the
+    reason duplexes and ADUs — both already legal almost everywhere in the city — mostly
+    don't get built.
+  </p>
+  <p>
+    Duplexes are by-right in R-4 and R-5 zoning. ADUs are allowed citywide. The zoning reform
+    for those two housing types is basically done — triplexes are the one type that still
+    needs a zoning change, since they currently require apartment or commercial zoning
+    everywhere. So for duplexes and ADUs, the real question was never <em>why is this
+    illegal</em>. It's <em>why doesn't anyone build it, if it's already legal?</em>
+  </p>
+  <p>
+    The answer is a construction math problem, not a permitting problem. New-build costs —
+    land, shell, financing, permitting — have to be covered by the rent a new unit can
+    actually charge. And when the market is already clearing $790&ndash;850 a month for
+    existing studios and 1-bedrooms nearby, a newly built unit can't charge much more just
+    because it's new. The revenue side of the math is capped by what's already on the
+    market — and in El Paso, that cap sits below what it typically costs to break even on
+    ground-up construction. Regardless of zoning.
+  </p>
+</div>
+
+<div class="prose-section wrap" style="border-top: 1px solid var(--line);">
+  <span class="drop-tag brick">A likely objection</span>
+  <h2>Doesn't this mean there's no housing need here?</h2>
+  <p>
+    No — and it's worth being precise about why not, because low rents and unmet housing
+    need aren't actually in tension. They're measuring two different things. Rent level is a
+    <em>price</em> stat. A needs assessment showing significant unmet demand, even below 70%
+    AMI, is an <em>availability</em> stat. A market can have a low average price and still be
+    badly short of decent, available units at that price — especially for the household
+    sizes and unit types the existing stock doesn't match well.
+  </p>
+  <p>
+    This dataset speaks to price level. It says nothing about vacancy, unit condition, or
+    whether what's on the market actually fits the households who need it. That's where the
+    real shortage lives, and it's a separate question from the one this map answers.
+  </p>
+</div>
+
+<div class="toggle-section wrap">
+  <span class="toggle-label">Read the map as</span>
+  <div class="toggle-row">
+    <button class="tab-btn active" data-mode="ami">Rent vs. income limits</button>
+    <button class="tab-btn" data-mode="feasibility">What can actually get built</button>
+  </div>
+  <div id="hh-controls">
+    <span class="toggle-label">For a household of</span>
+    <div class="hh-row">
+      <button class="hh-btn" data-size="1">1</button>
+      <button class="hh-btn" data-size="2">2</button>
+      <button class="hh-btn" data-size="3">3</button>
+      <button class="hh-btn active" data-size="4">4</button>
+    </div>
+  </div>
+</div>
+
+<div class="map-section wrap-wide">
+  <div class="map-card"><div id="map"></div></div>
+  <p class="map-caption" id="map-caption"></p>
+</div>
+
+<div class="wrap-wide"><div class="stat-strip" id="stat-strip"></div></div>
+
+<div class="prose-section wrap">
+  <span class="drop-tag ochre">The mechanism</span>
+  <h2>So why doesn't Austin have this problem?</h2>
+  <p>
+    Austin's rent sits <em>further</em> below its own 100% AMI than El Paso's does — Austin's
+    incomes are so much higher that even a healthy market rent looks cheap by comparison.
+    And yet Austin just delivered more than 30,000 new units in a single year, enough to push
+    its own vacancy rate to a decade high and rents down 6% year-over-year. So "rent below
+    AMI" clearly isn't what's stopping construction there.
+  </p>
+  <p>
+    That's because AMI is a <em>relative</em> number — it scales with each metro's own income
+    level. Construction costs don't scale that way. Materials, labor, and financing vary some
+    by region, but nowhere near as much as incomes do. So "rent vs. AMI" and "rent vs. what it
+    costs to build" are different questions that can point in opposite directions:
+  </p>
+  <table class="data-table">
+    <tr><th>Metro</th><th>100% AMI, 4-person</th><th>Approx. rent</th><th>Rent vs. AMI</th></tr>
+    <tr><td>El Paso</td><td class="num">$1,820/mo</td><td class="num">~$1,500</td><td class="num">&minus;18%</td></tr>
+    <tr><td>Lubbock</td><td class="num">$2,000/mo</td><td class="num">~$1,562</td><td class="num">&minus;22%</td></tr>
+    <tr class="flip"><td>Austin</td><td class="num">$3,360/mo</td><td class="num">~$2,395</td><td class="num">&minus;29%</td></tr>
+  </table>
+  <p>
+    Austin's rent is more "below AMI" than El Paso's, but in absolute dollars it comfortably
+    clears construction costs, while El Paso's doesn't. What's actually specific to El Paso
+    isn't rent-below-AMI — that turns out to be common everywhere we checked. It's
+    <strong>absolute rent that's low relative to costs that aren't set locally.</strong> That's
+    a narrower claim, and the reason this project treats the feasibility map below as the main
+    finding, and the AMI map as useful context.
+  </p>
+</div>
+
+<div class="pullquote-section wrap-wide">
+  <div class="pullquote">
+    Austin's rent sits further below its own income limit than El Paso's does — but Austin
+    is still building. El Paso's problem was never affordability.
+    It's whether the numbers <em>pencil</em> at all.
+  </div>
+  <div class="pullquote-source">Why this map exists</div>
+</div>
+
+<div class="prose-section wrap" style="border-top: 1px solid var(--line);">
+  <span class="drop-tag">By bedroom count</span>
+  <h2>The pattern flips right around 3&ndash;4 bedrooms</h2>
+  <p>
+    Studios through 2-bedroom units — the sizes that map most directly onto ADUs, duplex
+    units, and small infill product — rent well under what their household size could afford
+    at 100% AMI. Only the larger units cross above it:
+  </p>
+  <table class="data-table">
+    <tr><th>Bedrooms</th><th>Median rent</th><th>vs. AMI (standard)</th><th>vs. AMI (simple)</th></tr>
+    <tr><td>Studio</td><td class="num">$790</td><td class="num">&minus;38%</td><td class="num">&minus;38%</td></tr>
+    <tr><td>1BR</td><td class="num">$850</td><td class="num">&minus;38%</td><td class="num">&minus;33%</td></tr>
+    <tr><td>2BR</td><td class="num">$1,100</td><td class="num">&minus;33%</td><td class="num">&minus;24%</td></tr>
+    <tr><td>3BR</td><td class="num">$1,775</td><td class="num">&minus;6%</td><td class="num">+8%</td></tr>
+    <tr><td>4BR</td><td class="num">$2,093</td><td class="num">&minus;1%</td><td class="num">+15%</td></tr>
+    <tr class="flip"><td>5BR</td><td class="num">$2,850</td><td class="num">+35%</td><td class="num">+57%</td></tr>
+  </table>
+</div>
+
+<div class="prose-section wrap" style="border-top: 1px solid var(--line);">
+  <span class="drop-tag brick">What actually works here</span>
+  <h2>Two reforms that follow from a feasibility constraint</h2>
+  <p>
+    Since this is a construction-cost problem, not a legalization problem, "expand duplex
+    allowances" doesn't do much — that's already the law. Two levers that follow from where
+    the actual constraint sits:
+  </p>
+  <ul class="reform-list">
+    <li><strong>Prioritize adaptive reuse over new construction.</strong> Converting an
+    existing structure skips most of the land and shell cost that sinks new-build math, so it
+    can pencil at rents that kill ground-up projects. Our framework treats conversions as able
+    to support more units per structure — up to 8 — in high-vacancy tracts, which isn't a
+    style preference, it's the mechanism that makes low rents compatible with anything getting
+    built at all.</li>
+    <li><strong>Target cost-side reform for new construction, not use-side reform.</strong>
+    Raising rents to cover cost isn't available in this market, so the reform that matters is
+    lowering what a project has to cover: parking minimums, permitting timelines, a
+    prescriptive small-multifamily code path, fee waivers, or gap financing for the
+    already-legal quadplex-in-R-4/R-5 case.</li>
+  </ul>
+</div>
+
+<div class="toggle-section wrap" style="border-top: 3px solid var(--ink); padding-top: 32px;">
+  <span class="drop-tag ochre">Same map, sharper question</span>
+  <h2 style="font-family:'Fraunces',serif; font-weight:800; font-size:24px; margin:0 0 16px;">
+    Where can conversion work, and where can new construction actually pencil?
+  </h2>
+</div>
+
+<div class="map-section wrap-wide">
+  <p class="map-caption" style="padding-top:0; margin-top:0;">
+    Toggle to "What can actually get built" above to see this classification live on the same
+    map — it compares median rent per square foot against breakeven thresholds derived from
+    the project's proforma model, not against AMI.
+  </p>
+</div>
+
+<div class="prose-section wrap" style="border-top: 1px solid var(--line);">
+  <p>
+    <strong>87.7% of listings sit in a rent band where conversion pencils but new construction
+    doesn't.</strong> Only 4.3% clear the new-construction bar, and about 5% don't support even
+    subsidized conversion. Worth noting: the proforma's own built-in rent assumption
+    ($1.65/sqft) sits <em>above</em> the 75th percentile of what RentCast shows El Paso
+    actually charging ($1.33/sqft) — so the model's default scenario reads "feasible"
+    everywhere, which is an artifact of an optimistic input, not the real market. Running
+    actual hex-level rents through the same logic is what surfaces the split.
+  </p>
+</div>
+
+<div class="trend-section wrap-wide">
+  <span class="drop-tag">Since May 2026</span>
+  <h2 style="font-family:'Fraunces',serif; font-weight:800; font-size:24px; margin:8px 0 6px;">Is this a one-week story, or a pattern?</h2>
+  <p style="font-size:14px; color:var(--gray-text); max-width:620px; margin-bottom:20px;">
+    Three weekly readings from the same listings: the share below the income limit for a
+    4-person household, the share where conversion pencils but new construction doesn't, and
+    the share where new construction is feasible outright.
+  </p>
+  <canvas id="trend-chart"></canvas>
+  <p class="loading" id="trend-loading">Loading weekly history…</p>
+</div>
+
+<div class="footnotes wrap-wide">
+  <span class="drop-tag" style="background: var(--ink);">Methodology &amp; caveats</span>
+  <h3>How the AMI thresholds are set</h3>
+  <ul>
+    <li>HUD FY2025 income limits, El Paso, TX MSA, family median income $72,800. Household-size
+    adjustments follow HUD's standard schedule. Affordability = 30% of gross annual income.</li>
+    <li>Two household-size-by-bedroom conventions are shown: the HUD/LIHTC <strong>standard</strong>
+    (1.5 persons/bedroom) and a simpler <strong>1:1</strong> baseline (bedrooms = persons).</li>
+  </ul>
+  <h3>How the feasibility thresholds are derived</h3>
+  <ul>
+    <li>Inverted from the project's proforma sensitivity model: holding hard costs, land
+    value, hurdle rate, vacancy, and opex at baseline for a 4-unit El Paso infill lot, solved
+    for the minimum rent/sqft needed to clear each feasibility band (Feasible ≥ &minus;3% gap,
+    Feasible w/ subsidy ≥ &minus;10% gap).</li>
+    <li>The high-vacancy cutoff used to unlock more permissive 8-unit thresholds (top quartile,
+    ≥1.4% tract vacancy) is a data-driven default, not a formally adopted project threshold.</li>
+  </ul>
+  <h3>What this doesn't capture</h3>
+  <ul>
+    <li>Every figure reflects <strong>active listings</strong> (asking rents), not rents paid
+    across the full occupied stock — likely understating affordability at the bottom of the
+    market and modestly overstating it at the top.</li>
+    <li>The Lubbock/Austin comparison uses RentCafe/Zumper estimates, not our own RentCast
+    pipeline — a directional check, not an apples-to-apples benchmark.</li>
+    <li>The time series (May&ndash;July 2026, 11 weeks) is a baseline, not yet a settled trend.</li>
+  </ul>
+</div>
+
+<footer>
+  Rental listing data: RentCast. Income limits: HUD FY2025, El Paso, TX MSA.
+  Vacancy and demand signals: USPS &amp; Census ACS, tract level. Feasibility thresholds
+  derived from the project's proforma sensitivity model. Updated weekly, Thursdays.
+  <br>Full methodology in the repository <a href="https://github.com/hoffmanap/rentcast_ep">README</a>.
+</footer>
+
+<script>
+const AMI_THRESHOLDS = {1: 1274, 2: 1456, 3: 1638, 4: 1820};
+const FEASIBILITY_COLORS = {
+  "New construction feasible": "#2b4c7e",
+  "Conversion feasible, new construction not": "#7a97bd",
+  "Conversion feasible only with subsidy": "#c08a2e",
+  "Neither pencils without subsidy": "#b23a28",
+  "Insufficient sqft data": "#b8b2a3",
+};
+
+function colorForPct(pct) {
+  if (pct <= -40) return "#1d3a5f";
+  if (pct <= -25) return "#3f6396";
+  if (pct <= -10) return "#7a97bd";
+  if (pct <= 0)   return "#c3d0e0";
+  if (pct <= 10)  return "#e8c9b8";
+  if (pct <= 25)  return "#c17a52";
+  if (pct <= 40)  return "#b23a28";
+  return "#6e2118";
+}
+
+const map = L.map('map', { zoomControl: true, scrollWheelZoom: false }).setView([31.80, -106.40], 11);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 19
+}).addTo(map);
+
+let currentLayer = null;
+let currentSize = 4;
+let currentMode = 'ami';
+let geojsonData = null;
+
+fetch('el_paso_rent_vs_ami.geojson')
+  .then(r => r.json())
+  .then(gj => { geojsonData = gj; render(); })
+  .catch(() => {
+    document.getElementById('map').innerHTML =
+      '<p style="padding:20px;font-family:Inter,sans-serif;">Could not load el_paso_rent_vs_ami.geojson — make sure it exists at the repo root.</p>';
+  });
+
+function circleAnnotationSVG() {
+  return `<svg class="circle-annot" viewBox="0 0 100 100" preserveAspectRatio="none">
+    <path d="M 8 52 C 6 22, 28 6, 52 7 C 82 8, 95 26, 92 50 C 90 76, 68 94, 46 93 C 18 92, 5 74, 8 52 Z"
+      fill="none" stroke="#b23a28" stroke-width="1.6" opacity="0.85"/>
+  </svg>`;
+}
+
+function render() {
+  if (!geojsonData) return;
+  if (currentLayer) map.removeLayer(currentLayer);
+
+  if (currentMode === 'ami') {
+    const propKey = `pct_diff_ami_${currentSize}p`;
+    currentLayer = L.geoJSON(geojsonData, {
+      style: f => ({ fillColor: colorForPct(f.properties[propKey]), fillOpacity: 0.8, color: '#fbfaf7', weight: 0.5 }),
+      onEachFeature: (f, layer) => {
+        const p = f.properties, pct = p[propKey], sign = pct >= 0 ? '+' : '';
+        layer.bindPopup(
+          `<b>$${p.median_rent.toLocaleString()}/mo median rent</b><br>` +
+          `${p.n_listings} listing(s)<br>` +
+          `${sign}${pct}% vs. the ${currentSize}-person income limit ($${AMI_THRESHOLDS[currentSize].toLocaleString()}/mo)`
+        );
+      }
+    }).addTo(map);
+
+    let below = 0, total = 0;
+    geojsonData.features.forEach(f => {
+      total += f.properties.n_listings;
+      if (f.properties[propKey] < 0) below += f.properties.n_listings;
+    });
+    const pctBelow = (below/total*100).toFixed(0);
+    setHero(pctBelow + '%', `of listings rent <em>below</em> the income limit for a household of ${currentSize} — $${AMI_THRESHOLDS[currentSize].toLocaleString()}/month at 100% of the area median.`, 'July 2026 snapshot · RentCast listings');
+    document.getElementById('map-caption').textContent =
+      `Each hex is a cluster of nearby listings. Blue = renting below what a ${currentSize}-person household could afford at 100% of area median income. Rust = above it.`;
+    renderStats([
+      { num: pctBelow + '%', label: 'below income limit' },
+      { num: '$' + AMI_THRESHOLDS[currentSize].toLocaleString(), label: '100% AMI threshold, /mo' },
+      { num: total.toLocaleString(), label: 'listings behind this map' },
+    ]);
+
+  } else {
+    currentLayer = L.geoJSON(geojsonData, {
+      style: f => ({ fillColor: FEASIBILITY_COLORS[f.properties.feasibility] || '#b8b2a3', fillOpacity: 0.8, color: '#fbfaf7', weight: 0.5 }),
+      onEachFeature: (f, layer) => {
+        const p = f.properties;
+        layer.bindPopup(
+          `<b>${p.feasibility}</b><br>$${p.median_rent.toLocaleString()}/mo` +
+          (p.median_rent_per_sf ? ` ($${p.median_rent_per_sf}/sqft)` : '') +
+          `<br>${p.n_listings} listing(s)`
+        );
+      }
+    }).addTo(map);
+
+    const counts = {}; let total = 0;
+    geojsonData.features.forEach(f => {
+      const cat = f.properties.feasibility;
+      counts[cat] = (counts[cat] || 0) + f.properties.n_listings;
+      total += f.properties.n_listings;
+    });
+    const convPct = ((counts["Conversion feasible, new construction not"] || 0) / total * 100).toFixed(1);
+    const newPct = ((counts["New construction feasible"] || 0) / total * 100).toFixed(1);
+    setHero(convPct + '%', `of listings sit in a rent band where <em>conversion</em> pencils but new construction doesn't — only ${newPct}% clear the bar for building new.`, 'Thresholds derived from the project proforma');
+    document.getElementById('map-caption').textContent =
+      'Blue = conversion works here, new construction doesn\u2019t. Ochre = conversion needs a subsidy. Rust = neither pencils at current rents.';
+    renderStats([
+      { num: convPct + '%', label: 'conversion feasible only' },
+      { num: newPct + '%', label: 'new construction feasible' },
+      { num: total.toLocaleString(), label: 'listings behind this map' },
+    ]);
+  }
+  document.getElementById('hero-number').innerHTML =
+    document.getElementById('hero-number').textContent + circleAnnotationSVG();
+}
+
+function setHero(number, deckHtml, caption) {
+  document.getElementById('hero-number').textContent = number;
+  document.getElementById('hero-deck').innerHTML = deckHtml;
+  document.getElementById('hero-caption').textContent = caption;
+}
+
+function renderStats(stats) {
+  const el = document.getElementById('stat-strip');
+  el.innerHTML = stats.map(s => `
+    <div class="stat-block">
+      <span class="num">${s.num}</span>
+      <span class="label">${s.label}</span>
+    </div>
+  `).join('');
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+    document.getElementById('hh-controls').style.display = currentMode === 'ami' ? 'block' : 'none';
+    updateLegend();
+    render();
+  });
+});
+
+document.querySelectorAll('.hh-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.hh-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentSize = parseInt(btn.dataset.size);
+    render();
+  });
+});
+
+const legendControl = L.control({position: 'bottomright'});
+let legendDiv;
+legendControl.onAdd = function() { legendDiv = L.DomUtil.create('div', 'legend'); return legendDiv; };
+legendControl.addTo(map);
+
+function updateLegend() {
+  if (currentMode === 'ami') {
+    legendDiv.innerHTML = `
+      <div class="legend-title">% vs. income limit</div>
+      <div><span class="swatch" style="background:#1d3a5f;"></span>&lt; -40%</div>
+      <div><span class="swatch" style="background:#7a97bd;"></span>-25% to -10%</div>
+      <div><span class="swatch" style="background:#c3d0e0;"></span>-10% to 0%</div>
+      <div><span class="swatch" style="background:#e8c9b8;"></span>0% to +10%</div>
+      <div><span class="swatch" style="background:#c17a52;"></span>+10% to +25%</div>
+      <div><span class="swatch" style="background:#6e2118;"></span>&gt; +40%</div>
+    `;
+  } else {
+    legendDiv.innerHTML = `
+      <div class="legend-title">Development feasibility</div>
+      <div><span class="swatch" style="background:#2b4c7e;"></span>New construction feasible</div>
+      <div><span class="swatch" style="background:#7a97bd;"></span>Conversion feasible, new not</div>
+      <div><span class="swatch" style="background:#c08a2e;"></span>Conversion needs subsidy</div>
+      <div><span class="swatch" style="background:#b23a28;"></span>Neither pencils</div>
+    `;
+  }
+}
+updateLegend();
+
+// --- Trend chart, with a hand-drawn-style callout circling the latest point ---
+const latestPointAnnotation = {
+  id: 'latestPointAnnotation',
+  afterDatasetsDraw(chart) {
+    const ds = chart.data.datasets[1]; // conversion-feasible series
+    const meta = chart.getDatasetMeta(1);
+    if (!meta.data.length) return;
+    const lastPoint = meta.data[meta.data.length - 1];
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.strokeStyle = '#b23a28';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    const x = lastPoint.x, y = lastPoint.y, r = 14;
+    ctx.ellipse(x, y, r * 1.15, r, 0.15, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.font = "700 11px Archivo, sans-serif";
+    ctx.fillStyle = '#b23a28';
+    ctx.fillText('latest', x + 18, y - 10);
+    ctx.restore();
+  }
+};
+
+Papa.parse('ami_affordability_history.csv', {
+  download: true, header: true, dynamicTyping: true,
+  complete: (results) => {
+    document.getElementById('trend-loading').style.display = 'none';
+    const rows = results.data.filter(r => r.week_of);
+    Chart.defaults.font.family = "'Archivo', sans-serif";
+    Chart.defaults.font.size = 11;
+    Chart.defaults.color = '#55534c';
+    new Chart(document.getElementById('trend-chart'), {
+      type: 'line',
+      data: {
+        labels: rows.map(r => r.week_of),
+        datasets: [
+          {
+            label: '% below income limit (4-person)',
+            data: rows.map(r => r.pct_below_ami_4p),
+            borderColor: '#2b4c7e', backgroundColor: 'rgba(43,76,126,0.08)',
+            fill: true, tension: 0.15, borderWidth: 2.5, pointRadius: 2.5,
+          },
+          {
+            label: '% conversion-feasible only',
+            data: rows.map(r => r.pct_conversion_feasible_only),
+            borderColor: '#c08a2e', backgroundColor: 'rgba(192,138,46,0.08)',
+            fill: true, tension: 0.15, borderWidth: 2.5, pointRadius: 2.5,
+          },
+          {
+            label: '% new-construction feasible',
+            data: rows.map(r => r.pct_new_construction_feasible),
+            borderColor: '#b23a28', backgroundColor: 'rgba(178,58,40,0.08)',
+            fill: true, tension: 0.15, borderWidth: 2.5, pointRadius: 2.5,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, font: { family: "'Inter', sans-serif", size: 12 } } }
+        },
+        scales: {
+          x: { grid: { color: '#d8d5cc' } },
+          y: { min: 0, max: 100, grid: { color: '#d8d5cc' }, title: { display: true, text: '% of listings', font: { family: "'Inter', sans-serif", size: 12 } } }
+        }
+      },
+      plugins: [latestPointAnnotation]
+    });
+  },
+  error: () => {
+    document.getElementById('trend-loading').textContent =
+      'Could not load ami_affordability_history.csv — make sure it exists at the repo root.';
+  }
+});
+</script>
+</body>
+</html>
