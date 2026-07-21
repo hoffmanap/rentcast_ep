@@ -199,15 +199,16 @@ def main():
     if os.path.isfile(AFFORDABILITY_HISTORY_PATH):
         existing = pd.read_csv(AFFORDABILITY_HISTORY_PATH, dtype={"week_of": str})
         if row["week_of"] in existing["week_of"].values:
-            print(f"Week {row['week_of']} already in history, skipping append")
-        else:
-            # pd.concat aligns columns by name and fills NaN for any that
-            # don't exist on one side — safer than a raw text append when
-            # the schema has grown (e.g. new feasibility columns added
-            # after the AMI-only backfill)
-            combined = pd.concat([existing, row_df], ignore_index=True)
-            combined.to_csv(AFFORDABILITY_HISTORY_PATH, index=False)
-            print(f"Appended week {row['week_of']} to {AFFORDABILITY_HISTORY_PATH}")
+            # Overwrite rather than skip — an existing row for this week
+            # might be a stale partial backfill (e.g. AMI-only, no
+            # feasibility columns yet), and this run's numbers are more
+            # complete. Dropping and re-adding is simpler than patching
+            # individual cells and handles schema growth the same way.
+            existing = existing[existing["week_of"] != row["week_of"]]
+            print(f"Replacing existing row for week {row['week_of']} with fresh computation")
+        combined = pd.concat([existing, row_df], ignore_index=True).sort_values("week_of")
+        combined.to_csv(AFFORDABILITY_HISTORY_PATH, index=False)
+        print(f"{AFFORDABILITY_HISTORY_PATH} now has {len(combined)} weeks")
     else:
         row_df.to_csv(AFFORDABILITY_HISTORY_PATH, index=False)
         print(f"Created {AFFORDABILITY_HISTORY_PATH} with first week's data")
