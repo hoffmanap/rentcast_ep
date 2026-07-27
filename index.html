@@ -53,6 +53,95 @@
             background: white;
             cursor: pointer;
         }
+        /* KPI Stat Bar */
+        .kpi-bar {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem 2rem;
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+        .kpi-card {
+            flex: 1;
+            min-width: 140px;
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+        }
+        .kpi-label {
+            font-size: 0.78rem;
+            color: #64748b;
+            margin-bottom: 4px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .kpi-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+        .kpi-delta {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-left: 6px;
+        }
+        .kpi-delta.up { color: #dc2626; }
+        .kpi-delta.down { color: #16a34a; }
+        .kpi-sub {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+        /* Data coverage banner */
+        .coverage-banner {
+            background: #eff6ff;
+            border-bottom: 1px solid #bfdbfe;
+            color: #1e40af;
+            font-size: 0.82rem;
+            padding: 0.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        .coverage-banner button {
+            background: none;
+            border: none;
+            color: #1e40af;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        /* Property type filter chips */
+        .type-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 15px;
+        }
+        .type-selector label {
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            cursor: pointer;
+            background: #fff;
+            padding: 2px 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            user-select: none;
+        }
+        .type-selector label:hover { background: #f1f5f9; }
+        .field-note {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-top: -8px;
+            margin-bottom: 12px;
+        }
         .dashboard {
             display: flex;
             flex: 1;
@@ -167,6 +256,7 @@
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
+        .hidden { display: none !important; }
         @media (max-width: 1024px) {
             .dashboard {
                 flex-direction: column;
@@ -179,6 +269,17 @@
             .charts-container {
                 width: 100%;
             }
+        }
+        @media (max-width: 700px) {
+            .kpi-bar {
+                padding: 0.75rem 1rem;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            .kpi-card { min-width: 150px; flex: 0 0 auto; }
+            header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+            .coverage-banner { padding: 0.5rem 1rem; flex-direction: column; align-items: flex-start; }
         }
     </style>
 </head>
@@ -195,6 +296,34 @@
         </div>
     </header>
 
+    <div id="coverageBanner" class="coverage-banner hidden">
+        <span id="coverageBannerText"></span>
+        <button id="coverageBannerClose" title="Dismiss">&times;</button>
+    </div>
+
+    <div class="kpi-bar">
+        <div class="kpi-card">
+            <div class="kpi-label">Active Listings (latest pull)</div>
+            <div class="kpi-value" id="kpiListings">–</div>
+            <div class="kpi-sub" id="kpiListingsSub">&nbsp;</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Rent (latest pull)</div>
+            <div class="kpi-value" id="kpiRent">–</div>
+            <div class="kpi-sub" id="kpiRentSub">&nbsp;</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Days on Market</div>
+            <div class="kpi-value" id="kpiDom">–</div>
+            <div class="kpi-sub" id="kpiDomSub">&nbsp;</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">New Construction Share</div>
+            <div class="kpi-value" id="kpiNewConst">–</div>
+            <div class="kpi-sub" id="kpiNewConstSub">&nbsp;</div>
+        </div>
+    </div>
+
     <div class="dashboard">
         <div id="loading" class="loading">Loading and parsing data...</div>
         
@@ -203,6 +332,12 @@
         </div>
         
         <div class="charts-container">
+            <div class="chart-card">
+                <h3>Filter by Property Type</h3>
+                <div id="type-checkboxes" class="type-selector"></div>
+                <div class="field-note" id="typeFilterNote"></div>
+            </div>
+
             <div class="chart-card">
                 <h3>Trends by Number of Bedrooms</h3>
                 <div class="chart-wrapper">
@@ -244,6 +379,10 @@
         
         let allZips = [];
         let selectedZips = new Set();
+
+        let allTypes = [];
+        let selectedTypes = new Set();
+        const UNKNOWN_TYPE = 'Unknown / not yet collected';
         
         // El Paso coordinates
         const EL_PASO_COORDS = [31.7619, -106.4850];
@@ -263,6 +402,7 @@
                 processData();
                 updateMap();
                 updateCharts();
+                updateKPIs();
             });
 
             // Fetch and parse CSV
@@ -274,10 +414,13 @@
                 complete: function(results) {
                     rawData = results.data;
                     document.getElementById('loading').style.display = 'none';
+                    setupTypeSelector();
                     processData();
                     setupZipSelector();
                     updateMap();
                     updateCharts();
+                    updateKPIs();
+                    updateCoverageBanner();
                 },
                 error: function(err) {
                     document.getElementById('loading').innerText = "Error loading data. Make sure rent_history.csv exists.";
@@ -310,9 +453,11 @@
                 return {
                     ...d,
                     price_sqft: (sqft && sqft > 0 && price) ? (price / sqft) : null,
-                    date: d.capture_date
+                    date: d.capture_date,
+                    typeKey: d.propertyType || UNKNOWN_TYPE
                 };
-            }).filter(d => d.date && d.price && (metric === 'monthly' || d.price_sqft !== null));
+            }).filter(d => d.date && d.price && (metric === 'monthly' || d.price_sqft !== null))
+              .filter(d => selectedTypes.size === 0 || selectedTypes.has(d.typeKey));
         }
 
         function setupZipSelector() {
@@ -353,6 +498,135 @@
             });
         }
 
+        function setupTypeSelector() {
+            // Build type list from raw (unfiltered) data so the filter itself isn't self-limiting
+            const typeCounts = {};
+            rawData.forEach(d => {
+                if (!d.date && !d.capture_date) return;
+                const key = d.propertyType || UNKNOWN_TYPE;
+                typeCounts[key] = (typeCounts[key] || 0) + 1;
+            });
+
+            allTypes = Object.keys(typeCounts).sort((a, b) => {
+                if (a === UNKNOWN_TYPE) return 1;
+                if (b === UNKNOWN_TYPE) return -1;
+                return typeCounts[b] - typeCounts[a];
+            });
+
+            // Default: everything selected (no filtering out-of-the-box)
+            allTypes.forEach(t => selectedTypes.add(t));
+
+            const container = document.getElementById('type-checkboxes');
+            container.innerHTML = '';
+
+            allTypes.forEach(type => {
+                const label = document.createElement('label');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = type;
+                cb.checked = selectedTypes.has(type);
+
+                cb.onchange = (e) => {
+                    if (e.target.checked) {
+                        selectedTypes.add(type);
+                    } else {
+                        selectedTypes.delete(type);
+                    }
+                    processData();
+                    updateMap();
+                    updateCharts();
+                    updateKPIs();
+                };
+
+                label.appendChild(cb);
+                const displayName = type === UNKNOWN_TYPE ? `${type} (${typeCounts[type]})` : `${type} (${typeCounts[type]})`;
+                label.appendChild(document.createTextNode(` ${displayName}`));
+                container.appendChild(label);
+            });
+
+            const unknownCount = typeCounts[UNKNOWN_TYPE] || 0;
+            const noteEl = document.getElementById('typeFilterNote');
+            if (unknownCount > 0) {
+                noteEl.textContent = `Property type is only recorded for listings collected in recent weekly pulls. Older listings are grouped under "${UNKNOWN_TYPE}" — uncheck it to see only fully-detailed data.`;
+            } else {
+                noteEl.textContent = '';
+            }
+        }
+
+        function updateKPIs() {
+            if (cleanData.length === 0) return;
+            const dates = [...new Set(cleanData.map(d => d.date))].sort();
+            const latestDate = dates[dates.length - 1];
+            const prevDate = dates.length > 1 ? dates[dates.length - 2] : null;
+
+            const latest = cleanData.filter(d => d.date === latestDate);
+            const prev = prevDate ? cleanData.filter(d => d.date === prevDate) : [];
+
+            // Active Listings
+            document.getElementById('kpiListings').textContent = latest.length.toLocaleString();
+            document.getElementById('kpiListingsSub').textContent = `As of ${latestDate}`;
+
+            // Avg Rent + WoW change
+            const avgRent = latest.reduce((a, d) => a + d.price, 0) / latest.length;
+            document.getElementById('kpiRent').textContent = `$${Math.round(avgRent).toLocaleString()}`;
+            if (prev.length > 0) {
+                const prevAvgRent = prev.reduce((a, d) => a + d.price, 0) / prev.length;
+                const pctChange = ((avgRent - prevAvgRent) / prevAvgRent) * 100;
+                const arrow = pctChange >= 0 ? '▲' : '▼';
+                const cls = pctChange >= 0 ? 'up' : 'down';
+                document.getElementById('kpiRentSub').innerHTML =
+                    `<span class="kpi-delta ${cls}">${arrow} ${Math.abs(pctChange).toFixed(1)}% vs prior pull</span>`;
+            } else {
+                document.getElementById('kpiRentSub').textContent = 'No prior pull to compare';
+            }
+
+            // Avg Days on Market
+            const domVals = latest.filter(d => d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '' && !isNaN(d.daysOnMarket));
+            if (domVals.length > 0) {
+                const avgDom = domVals.reduce((a, d) => a + Number(d.daysOnMarket), 0) / domVals.length;
+                document.getElementById('kpiDom').textContent = `${Math.round(avgDom)} days`;
+                document.getElementById('kpiDomSub').textContent = `Based on ${domVals.length} of ${latest.length} listings`;
+            } else {
+                document.getElementById('kpiDom').textContent = '—';
+                document.getElementById('kpiDomSub').textContent = 'Not yet available for this pull';
+            }
+
+            // New Construction Share
+            const typedVals = latest.filter(d => d.listingType);
+            if (typedVals.length > 0) {
+                const newConstCount = typedVals.filter(d => d.listingType === 'New Construction').length;
+                const pct = (newConstCount / typedVals.length) * 100;
+                document.getElementById('kpiNewConst').textContent = `${pct.toFixed(1)}%`;
+                document.getElementById('kpiNewConstSub').textContent = `Based on ${typedVals.length} of ${latest.length} listings`;
+            } else {
+                document.getElementById('kpiNewConst').textContent = '—';
+                document.getElementById('kpiNewConstSub').textContent = 'Not yet available for this pull';
+            }
+        }
+
+        function updateCoverageBanner() {
+            const withType = rawData.filter(d => d.propertyType && d.capture_date);
+            if (withType.length === 0) return; // nothing to announce yet
+
+            const coverageStart = withType.map(d => d.capture_date).sort()[0];
+            const allDates = [...new Set(rawData.filter(d => d.capture_date).map(d => d.capture_date))].sort();
+            const earliestDate = allDates[0];
+
+            if (coverageStart === earliestDate) return; // full history already has detail, nothing to flag
+
+            if (localStorage.getItem('coverageBannerDismissed') === coverageStart) return;
+
+            const banner = document.getElementById('coverageBanner');
+            document.getElementById('coverageBannerText').textContent =
+                `ℹ️ Detailed property attributes (type, days on market, listing status, HOA fees, etc.) are recorded starting with the ${coverageStart} pull. Earlier weeks include core fields only (rent, beds, baths, sqft, location).`;
+            banner.classList.remove('hidden');
+
+            document.getElementById('coverageBannerClose').onclick = () => {
+                banner.classList.add('hidden');
+                localStorage.setItem('coverageBannerDismissed', coverageStart);
+            };
+        }
+
         function updateMap() {
             if (cleanData.length === 0) return;
             mapMarkers.clearLayers();
@@ -370,13 +644,21 @@
                 let color = val > (metric === 'monthly' ? 2000 : 1.5) ? '#dc2626' : 
                             val > (metric === 'monthly' ? 1400 : 1.1) ? '#d97706' : '#16a34a';
 
+                let extraLines = '';
+                if (d.propertyType) extraLines += `Type: ${d.propertyType}<br>`;
+                if (d.yearBuilt) extraLines += `Year Built: ${d.yearBuilt}<br>`;
+                if (d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '') extraLines += `Days on Market: ${d.daysOnMarket}<br>`;
+                if (d.status) extraLines += `Status: ${d.status}<br>`;
+                if (d.hoa_fee) extraLines += `HOA: $${d.hoa_fee}/mo<br>`;
+
                 const popupContent = `
                     <b>${d.formattedAddress || 'Address Unknown'}</b><br>
                     Zip: ${d.zipCode}<br>
                     Beds: ${d.bedrooms} | Baths: ${d.bathrooms}<br>
                     SqFt: ${d.squareFootage || 'N/A'}<br>
                     Rent: $${d.price}<br>
-                    $/SqFt: ${d.price_sqft ? '$' + d.price_sqft.toFixed(2) : 'N/A'}
+                    $/SqFt: ${d.price_sqft ? '$' + d.price_sqft.toFixed(2) : 'N/A'}<br>
+                    ${extraLines}
                 `;
 
                 L.circleMarker([d.latitude, d.longitude], {
