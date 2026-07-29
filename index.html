@@ -1,888 +1,1044 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>El Paso Rental Market Trends</title>
-    
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>El Paso Rental Market Dashboard</title>
 
-    <style>
-        :root {
-            --primary: #2563eb;
-            --bg-color: #f8fafc;
-            --card-bg: #ffffff;
-            --text-main: #1e293b;
-            --border: #e2e8f0;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-        header {
-            background-color: var(--card-bg);
-            padding: 1rem 2rem;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            z-index: 1000;
-        }
-        header h1 {
-            margin: 0;
-            font-size: 1.5rem;
-            color: var(--text-main);
-        }
-        .controls select {
-            padding: 0.5rem;
-            font-size: 1rem;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            background: white;
-            cursor: pointer;
-        }
-        /* KPI Stat Bar */
-        .kpi-bar {
-            display: flex;
-            gap: 1rem;
-            padding: 1rem 2rem;
-            background-color: var(--card-bg);
-            border-bottom: 1px solid var(--border);
-            flex-wrap: wrap;
-        }
-        .kpi-card {
-            flex: 1;
-            min-width: 140px;
-            background: #f8fafc;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
-        }
-        .kpi-label {
-            font-size: 0.78rem;
-            color: #64748b;
-            margin-bottom: 4px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.02em;
-        }
-        .kpi-value {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: var(--text-main);
-        }
-        .kpi-delta {
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-left: 6px;
-        }
-        .kpi-delta.up { color: #dc2626; }
-        .kpi-delta.down { color: #16a34a; }
-        .kpi-sub {
-            font-size: 0.72rem;
-            color: #94a3b8;
-            margin-top: 2px;
-        }
-        /* Data coverage banner */
-        .coverage-banner {
-            background: #eff6ff;
-            border-bottom: 1px solid #bfdbfe;
-            color: #1e40af;
-            font-size: 0.82rem;
-            padding: 0.5rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 1rem;
-        }
-        .coverage-banner button {
-            background: none;
-            border: none;
-            color: #1e40af;
-            font-weight: 700;
-            cursor: pointer;
-            font-size: 0.9rem;
-            flex-shrink: 0;
-        }
-        /* Property type filter chips */
-        .type-selector {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            margin-bottom: 15px;
-        }
-        .type-selector label {
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-            cursor: pointer;
-            background: #fff;
-            padding: 2px 8px;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            user-select: none;
-        }
-        .type-selector label:hover { background: #f1f5f9; }
-        .field-note {
-            font-size: 0.75rem;
-            color: #94a3b8;
-            margin-top: -8px;
-            margin-bottom: 12px;
-        }
-        .dashboard {
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-        }
-        .map-container {
-            flex: 1;
-            position: relative;
-            border-right: 1px solid var(--border);
-        }
-        #map {
-            width: 100%;
-            height: 100%;
-            background-color: #e5e5e5;
-        }
-        .charts-container {
-            width: 45%;
-            padding: 1.5rem;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-        .chart-card {
-            background: var(--card-bg);
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            display: flex;
-            flex-direction: column;
-        }
-        .chart-card h3 {
-            margin-top: 0;
-            margin-bottom: 15px;
-            font-size: 1.1rem;
-            color: var(--text-main);
-        }
-        .chart-wrapper {
-            position: relative;
-            height: 300px;
-            width: 100%;
-        }
-        
-        /* Dynamic Zip Selector Styles */
-        .zip-selector-container {
-            margin-bottom: 15px;
-        }
-        .zip-selector-label {
-            font-size: 0.85rem;
-            color: #64748b;
-            margin-bottom: 5px;
-        }
-        .zip-selector {
-            max-height: 80px;
-            overflow-y: auto;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 0.5rem;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            background: #fdfdfd;
-        }
-        .zip-selector label {
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-            cursor: pointer;
-            background: #fff;
-            padding: 2px 8px;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            user-select: none;
-        }
-        .zip-selector label:hover {
-            background: #f1f5f9;
-        }
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
-        /* Map Legend Styles */
-        .info.legend {
-            background: white;
-            padding: 10px 14px;
-            border-radius: 5px;
-            border: 1px solid var(--border);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-            line-height: 1.6;
-            font-size: 0.85rem;
-            color: var(--text-main);
-        }
-        .info.legend i {
-            width: 12px;
-            height: 12px;
-            float: left;
-            margin-right: 8px;
-            margin-top: 4px;
-            border-radius: 50%;
-            opacity: 0.7;
-        }
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 1.2rem;
-            font-weight: bold;
-            z-index: 2000;
-            background: white;
-            padding: 1rem 2rem;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .hidden { display: none !important; }
-        @media (max-width: 1024px) {
-            .dashboard {
-                flex-direction: column;
-                overflow-y: auto;
-            }
-            .map-container {
-                min-height: 400px;
-                flex: none;
-            }
-            .charts-container {
-                width: 100%;
-            }
-        }
-        @media (max-width: 700px) {
-            .kpi-bar {
-                padding: 0.75rem 1rem;
-                flex-wrap: nowrap;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-            .kpi-card { min-width: 150px; flex: 0 0 auto; }
-            header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
-            .coverage-banner { padding: 0.5rem 1rem; flex-direction: column; align-items: flex-start; }
-        }
-    </style>
+<style>
+  :root {
+    --ink: #111111;
+    --muted: #55524a;
+    --paper: #fdfaf3;
+    --paper-deep: #f3efe2;
+    --card: #ffffff;
+    --border: #111111;
+    --accent: #4361ee;
+    --accent-deep: #2740c4;
+    --yellow: #ffd60a;
+    --mint: #d7fbef;
+    --butter: #fff3c4;
+    --salmon: #ffe3d8;
+    --lavender: #dde3ff;
+    --shadow-offset: 5px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    margin: 0;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ---- Header ---- */
+  header {
+    background: var(--card);
+    padding: 1.1rem 1.8rem;
+    border-bottom: 3px solid var(--ink);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    z-index: 1000;
+  }
+  header h1 {
+    font-family: 'Archivo Black', sans-serif;
+    font-weight: 400;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    margin: 0;
+    color: var(--ink);
+  }
+  header h1 .hl {
+    background: var(--yellow);
+    box-decoration-break: clone; -webkit-box-decoration-break: clone;
+    padding: 0 0.15em;
+  }
+  .sticker {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 700; font-size: 0.68rem;
+    letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink);
+    background: var(--yellow); border: 2px solid var(--ink); border-radius: 50px;
+    padding: 4px 12px; transform: rotate(-2deg);
+    box-shadow: 3px 3px 0 var(--ink);
+    margin-left: 0.7rem;
+    vertical-align: middle;
+  }
+
+  /* ---- Pill / segmented controls ---- */
+  .pill-group {
+    display: inline-flex; border: 2.5px solid var(--ink); border-radius: 50px;
+    overflow: hidden; background: var(--card); box-shadow: 3px 3px 0 var(--ink);
+  }
+  .pill-group button {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.02em;
+    border: none; background: transparent; color: var(--ink);
+    padding: 7px 16px; cursor: pointer; transition: background 0.12s ease;
+  }
+  .pill-group button + button { border-left: 2px solid var(--ink); }
+  .pill-group button.active { background: var(--accent); color: white; }
+  .pill-group button:hover:not(.active) { background: var(--paper-deep); }
+
+  .control-label {
+    font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); margin-bottom: 5px; display: block;
+  }
+
+  /* ---- Coverage banner ---- */
+  .coverage-banner {
+    background: var(--lavender); border-bottom: 2.5px solid var(--ink);
+    color: #1c2568; font-size: 0.82rem; padding: 0.55rem 1.8rem;
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    flex-shrink: 0;
+  }
+  .coverage-banner button {
+    background: none; border: none; color: #1c2568; font-weight: 700;
+    cursor: pointer; font-size: 1rem; flex-shrink: 0;
+  }
+
+  /* ---- Toolbar (metric / bedroom / timeframe / aggregation) ---- */
+  .toolbar {
+    background: var(--card); border-bottom: 2.5px solid var(--ink);
+    padding: 0.9rem 1.8rem; display: flex; gap: 2rem; flex-wrap: wrap; align-items: flex-end;
+    flex-shrink: 0;
+  }
+  .toolbar-group { display: flex; flex-direction: column; }
+  .toolbar-group.grow { flex: 1; min-width: 280px; }
+
+  /* ---- Range slider ---- */
+  .range-slider {
+    position: relative; height: 30px; width: 100%; max-width: 480px;
+  }
+  .range-slider .track-bg {
+    position: absolute; top: 13px; left: 0; right: 0; height: 4px;
+    background: var(--paper-deep); border-radius: 2px; border: 1.5px solid var(--ink);
+  }
+  .range-slider .track-fill {
+    position: absolute; top: 13px; height: 4px; background: var(--accent);
+  }
+  .range-slider input[type=range] {
+    position: absolute; top: 0; left: 0; width: 100%; height: 30px; margin: 0;
+    -webkit-appearance: none; appearance: none; background: transparent; pointer-events: none;
+  }
+  .range-slider input[type=range]::-webkit-slider-thumb {
+    pointer-events: auto; -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%; background: var(--card);
+    border: 2.5px solid var(--ink); cursor: pointer; margin-top: -7px;
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .range-slider input[type=range]::-moz-range-thumb {
+    pointer-events: auto; width: 16px; height: 16px; border-radius: 50%; background: var(--card);
+    border: 2.5px solid var(--ink); cursor: pointer; box-shadow: 2px 2px 0 var(--ink);
+  }
+  .range-slider input[type=range]::-moz-range-track { background: transparent; border: none; }
+  .range-readout {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--ink);
+    margin-top: 4px; font-weight: 600;
+  }
+
+  /* ---- Stat row (KPIs) ---- */
+  .stat-row {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+    padding: 1rem 1.8rem; background: var(--paper); flex-shrink: 0;
+  }
+  .stat-box {
+    background: var(--card); border: 2.5px solid var(--ink); border-radius: 10px;
+    padding: 0.9rem 1rem; box-shadow: 4px 4px 0 var(--ink);
+  }
+  .stat-box:nth-child(1) { background: var(--mint); }
+  .stat-box:nth-child(2) { background: var(--butter); }
+  .stat-box:nth-child(3) { background: var(--salmon); }
+  .stat-box:nth-child(4) { background: var(--lavender); }
+  .stat-box:nth-child(5) { background: #f0e3ff; }
+  .stat-box .lbl {
+    font-size: 0.66rem; color: var(--ink); font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.03em; opacity: 0.7; margin-bottom: 4px;
+  }
+  .stat-box .num {
+    font-family: 'Archivo Black', sans-serif; font-weight: 400; font-size: 1.55rem;
+    color: var(--ink); letter-spacing: -0.01em; line-height: 1;
+  }
+  .stat-box .sub { font-size: 0.72rem; margin-top: 5px; font-weight: 600; min-height: 1em; }
+  .stat-box .sub.up { color: #b3271e; }
+  .stat-box .sub.down { color: #0a7a4b; }
+  .stat-box .sub.neutral { color: var(--muted); }
+
+  /* ---- Dashboard layout ---- */
+  .dashboard { display: flex; flex: 1; overflow: hidden; }
+  .map-container { flex: 1; position: relative; border-right: 3px solid var(--ink); }
+  #map { width: 100%; height: 100%; background: #e5e5e5; }
+  .map-toggle {
+    position: absolute; top: 14px; left: 50px; z-index: 999;
+  }
+  .charts-container {
+    width: 44%; padding: 1.2rem; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 1.1rem; background: var(--paper);
+  }
+  .chart-card {
+    background: var(--card); border: 2.5px solid var(--ink); border-radius: 10px;
+    padding: 1.1rem 1.2rem; box-shadow: 5px 5px 0 var(--ink);
+    display: flex; flex-direction: column;
+  }
+  .chart-card h3 {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1rem;
+    text-transform: uppercase; letter-spacing: 0.01em;
+    margin: 0 0 12px; color: var(--ink); display: flex; justify-content: space-between; align-items: center;
+  }
+  .chart-wrapper { position: relative; height: 280px; width: 100%; }
+
+  /* ---- Filter chips ---- */
+  .zip-selector-container, .type-selector-container { margin-bottom: 12px; }
+  .selector-label { font-size: 0.78rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+  .zip-selector, .type-selector {
+    max-height: 80px; overflow-y: auto; border: 2px solid var(--ink); border-radius: 8px;
+    padding: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.4rem; background: var(--paper-deep);
+  }
+  .zip-selector label, .type-selector label {
+    font-size: 0.8rem; display: flex; align-items: center; gap: 0.3rem; cursor: pointer;
+    background: var(--card); padding: 3px 10px; border: 2px solid var(--ink); border-radius: 20px;
+    user-select: none; font-weight: 600;
+  }
+  .zip-selector label:hover, .type-selector label:hover { background: var(--yellow); }
+  .field-note { font-size: 0.74rem; color: var(--muted); margin-top: 8px; }
+
+  /* ---- Map legend ---- */
+  .info.legend {
+    background: var(--card); padding: 10px 14px; border-radius: 8px;
+    border: 2.5px solid var(--ink); box-shadow: 4px 4px 0 var(--ink);
+    line-height: 1.6; font-size: 0.82rem; color: var(--ink);
+  }
+  .info.legend i {
+    width: 12px; height: 12px; float: left; margin-right: 8px; margin-top: 4px;
+    border-radius: 50%; border: 1.5px solid var(--ink);
+  }
+
+  .loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 700; z-index: 2000;
+    background: var(--card); padding: 1rem 2rem; border-radius: 10px;
+    border: 2.5px solid var(--ink); box-shadow: 5px 5px 0 var(--ink);
+  }
+  .hidden { display: none !important; }
+
+  @media (max-width: 1100px) {
+    .dashboard { flex-direction: column; overflow-y: auto; }
+    .map-container { height: 420px; min-height: 420px; flex: none; border-right: none; border-bottom: 3px solid var(--ink); }
+    .charts-container { width: 100%; }
+    .stat-row { grid-template-columns: repeat(2, 1fr); overflow-x: visible; }
+  }
+  @media (max-width: 640px) {
+    header { padding: 0.9rem 1rem; }
+    .toolbar { padding: 0.9rem 1rem; gap: 1.2rem; }
+    .stat-row { padding: 0.8rem 1rem; grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
 </head>
 <body>
 
-    <header>
-        <h1>El Paso Rental Market Dashboard</h1>
-        <div class="controls">
-            <label for="metricToggle"><strong>Metric: </strong></label>
-            <select id="metricToggle">
-                <option value="monthly">Monthly Rent ($)</option>
-                <option value="sqft">Price per Sq Ft ($)</option>
-            </select>
-        </div>
-    </header>
+<header>
+  <h1>El Paso Rental Market <span class="hl">Dashboard</span><span class="sticker">Live weekly data</span></h1>
+  <div class="pill-group" id="metricToggleGroup">
+    <button data-value="monthly" class="active">Monthly Rent</button>
+    <button data-value="sqft">$ / Sq Ft</button>
+  </div>
+</header>
 
-    <div id="coverageBanner" class="coverage-banner hidden">
-        <span id="coverageBannerText"></span>
-        <button id="coverageBannerClose" title="Dismiss">&times;</button>
+<div id="coverageBanner" class="coverage-banner hidden">
+  <span id="coverageBannerText"></span>
+  <button id="coverageBannerClose" title="Dismiss">&times;</button>
+</div>
+
+<div class="toolbar">
+  <div class="toolbar-group">
+    <span class="control-label">Bedroom Type</span>
+    <div class="pill-group" id="bedFilterGroup">
+      <button data-value="all" class="active">All</button>
+      <button data-value="1">1BR</button>
+      <button data-value="2">2BR</button>
+      <button data-value="3">3BR</button>
+      <button data-value="4+">4+BR</button>
+    </div>
+  </div>
+
+  <div class="toolbar-group">
+    <span class="control-label">Trend Granularity</span>
+    <div class="pill-group" id="aggGroup">
+      <button data-value="week" class="active">Week</button>
+      <button data-value="month">Month</button>
+      <button data-value="quarter">Quarter</button>
+      <button data-value="year">Year</button>
+    </div>
+  </div>
+
+  <div class="toolbar-group grow">
+    <span class="control-label">Analysis Window</span>
+    <div class="range-slider" id="rangeSlider">
+      <div class="track-bg"></div>
+      <div class="track-fill" id="trackFill"></div>
+      <input type="range" id="rangeStart" min="0" max="0" value="0">
+      <input type="range" id="rangeEnd" min="0" max="0" value="0">
+    </div>
+    <div class="range-readout" id="rangeReadout">Loading date range&hellip;</div>
+  </div>
+</div>
+
+<div class="stat-row" id="kpiRow">
+  <div class="stat-box">
+    <div class="lbl">Active Listings</div>
+    <div class="num" id="kpiListings">&ndash;</div>
+    <div class="sub neutral" id="kpiListingsSub">&nbsp;</div>
+  </div>
+  <div class="stat-box">
+    <div class="lbl">Avg Rent</div>
+    <div class="num" id="kpiRent">&ndash;</div>
+    <div class="sub neutral" id="kpiRentSub">&nbsp;</div>
+  </div>
+  <div class="stat-box">
+    <div class="lbl">Avg $ / Sq Ft</div>
+    <div class="num" id="kpiSqft">&ndash;</div>
+    <div class="sub neutral" id="kpiSqftSub">&nbsp;</div>
+  </div>
+  <div class="stat-box">
+    <div class="lbl">Avg Days on Market</div>
+    <div class="num" id="kpiDom">&ndash;</div>
+    <div class="sub neutral" id="kpiDomSub">&nbsp;</div>
+  </div>
+  <div class="stat-box">
+    <div class="lbl">New Construction Share</div>
+    <div class="num" id="kpiNewConst">&ndash;</div>
+    <div class="sub neutral" id="kpiNewConstSub">&nbsp;</div>
+  </div>
+</div>
+
+<div class="dashboard">
+  <div id="loading" class="loading">Loading and parsing data&hellip;</div>
+
+  <div class="map-container">
+    <div class="map-toggle pill-group" id="mapModeGroup">
+      <button data-value="points" class="active">Points</button>
+      <button data-value="hexbin">Hexbin</button>
+    </div>
+    <div id="map"></div>
+  </div>
+
+  <div class="charts-container">
+    <div class="chart-card">
+      <h3>Filter by Property Type</h3>
+      <div id="type-checkboxes" class="type-selector"></div>
+      <div class="field-note" id="typeFilterNote"></div>
     </div>
 
-    <div class="kpi-bar">
-        <div class="kpi-card">
-            <div class="kpi-label">Active Listings (latest pull)</div>
-            <div class="kpi-value" id="kpiListings">–</div>
-            <div class="kpi-sub" id="kpiListingsSub">&nbsp;</div>
-        </div>
-        <div class="kpi-card">
-            <div class="kpi-label">Avg Rent (latest pull)</div>
-            <div class="kpi-value" id="kpiRent">–</div>
-            <div class="kpi-sub" id="kpiRentSub">&nbsp;</div>
-        </div>
-        <div class="kpi-card">
-            <div class="kpi-label">Avg Days on Market</div>
-            <div class="kpi-value" id="kpiDom">–</div>
-            <div class="kpi-sub" id="kpiDomSub">&nbsp;</div>
-        </div>
-        <div class="kpi-card">
-            <div class="kpi-label">New Construction Share</div>
-            <div class="kpi-value" id="kpiNewConst">–</div>
-            <div class="kpi-sub" id="kpiNewConstSub">&nbsp;</div>
-        </div>
+    <div class="chart-card">
+      <h3>Rent Trends by Bedroom Count</h3>
+      <div class="chart-wrapper">
+        <canvas id="bedChart"></canvas>
+      </div>
     </div>
 
-    <div class="dashboard">
-        <div id="loading" class="loading">Loading and parsing data...</div>
-        
-        <div class="map-container">
-            <div id="map"></div>
-        </div>
-        
-        <div class="charts-container">
-            <div class="chart-card">
-                <h3>Filter by Property Type</h3>
-                <div id="type-checkboxes" class="type-selector"></div>
-                <div class="field-note" id="typeFilterNote"></div>
-            </div>
-
-            <div class="chart-card">
-                <h3>Trends by Number of Bedrooms</h3>
-                <div class="chart-wrapper">
-                    <canvas id="bedChart"></canvas>
-                </div>
-            </div>
-
-            <div class="chart-card">
-                <h3>Trends by Zip Code</h3>
-                <div class="zip-selector-container">
-                    <div class="zip-selector-label">Select zip codes to compare:</div>
-                    <div id="zip-checkboxes" class="zip-selector">
-                        </div>
-                </div>
-                <div class="chart-wrapper">
-                    <canvas id="zipChart"></canvas>
-                </div>
-            </div>
-
-            <div class="chart-card">
-                <h3>Housing Inventory Breakdown (%)</h3>
-                <div class="chart-wrapper">
-                    <canvas id="inventoryChart"></canvas>
-                </div>
-            </div>
-        </div>
+    <div class="chart-card">
+      <h3>Rent Trends by Zip Code</h3>
+      <div class="zip-selector-container">
+        <div class="selector-label">Select zip codes to compare:</div>
+        <div id="zip-checkboxes" class="zip-selector"></div>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="zipChart"></canvas>
+      </div>
     </div>
 
-    <script>
-        // Global State
-        let rawData = [];
-        let cleanData = [];
-        let bedChartInstance = null;
-        let zipChartInstance = null;
-        let inventoryChartInstance = null;
-        let mapInstance = null;
-        let mapMarkers = L.layerGroup();
-        let mapLegend = null; // Store legend instance
-        
-        let allZips = [];
-        let selectedZips = new Set();
+    <div class="chart-card">
+      <h3>Housing Inventory Breakdown (%)</h3>
+      <div class="chart-wrapper">
+        <canvas id="inventoryChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
 
-        let allTypes = [];
-        let selectedTypes = new Set();
-        const UNKNOWN_TYPE = 'Unknown / not yet collected';
-        
-        // El Paso coordinates
-        const EL_PASO_COORDS = [31.7619, -106.4850];
+<script>
+// ============================================================
+// Global State
+// ============================================================
+let rawData = [];
+let cleanData = [];       // full parsed dataset (type-filter applied), independent of metric/date-range
+let bedChartInstance = null;
+let zipChartInstance = null;
+let inventoryChartInstance = null;
+let mapInstance = null;
+let mapMarkers = L.layerGroup();
+let mapLegend = null;
 
-        // Extended Color Palette
-        const colors = [
-            '#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', 
-            '#0891b2', '#be123c', '#ca8a04', '#4f46e5', '#059669',
-            '#e11d48', '#0284c7', '#65a30d', '#7c3aed', '#ea580c'
-        ];
+let allZips = [];
+let selectedZips = new Set();
 
-        document.addEventListener('DOMContentLoaded', () => {
-            initMap();
-            
-            // Listen for metric toggle (updates map and value-based charts)
-            document.getElementById('metricToggle').addEventListener('change', () => {
-                processData();
-                updateMap();
-                updateCharts();
-                updateKPIs();
-            });
+let allTypes = [];
+let selectedTypes = new Set();
+const UNKNOWN_TYPE = 'Unknown / not yet collected';
 
-            // Fetch and parse CSV
-            Papa.parse("rent_history.csv", {
-                download: true,
-                header: true,
-                dynamicTyping: true,
-                skipEmptyLines: true,
-                complete: function(results) {
-                    rawData = results.data;
-                    document.getElementById('loading').style.display = 'none';
-                    setupTypeSelector();
-                    processData();
-                    setupZipSelector();
-                    updateMap();
-                    updateCharts();
-                    updateKPIs();
-                    updateCoverageBanner();
-                },
-                error: function(err) {
-                    document.getElementById('loading').innerText = "Error loading data. Make sure rent_history.csv exists.";
-                    console.error("Parse Error:", err);
-                }
-            });
+let allDates = [];         // sorted unique capture_date strings
+let rangeStartIdx = 0;
+let rangeEndIdx = 0;
+
+let metric = 'monthly';    // 'monthly' | 'sqft'
+let bedFilter = 'all';     // 'all' | '1' | '2' | '3' | '4+'
+let aggLevel = 'week';     // 'week' | 'month' | 'quarter' | 'year'
+let mapMode = 'points';    // 'points' | 'hexbin'
+
+const EL_PASO_COORDS = [31.7619, -106.4850];
+const PROJ_LAT0 = 31.85, PROJ_LON0 = -106.44;
+const HEX_SIZE_M = 850;
+
+const colors = [
+    '#4361ee', '#b3271e', '#0a7a4b', '#d97706', '#9333ea',
+    '#0891b2', '#be123c', '#ca8a04', '#4f46e5', '#059669',
+    '#e11d48', '#0284c7', '#65a30d', '#7c3aed', '#ea580c'
+];
+
+// ============================================================
+// Boot
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+    wireControls();
+
+    Papa.parse("rent_history.csv", {
+        download: true,
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+            rawData = results.data;
+            document.getElementById('loading').style.display = 'none';
+            buildDateAxis();
+            setupTypeSelector();
+            processData();
+            setupZipSelector();
+            refreshAll();
+            updateCoverageBanner();
+        },
+        error: function(err) {
+            document.getElementById('loading').innerText = "Error loading data. Make sure rent_history.csv exists.";
+            console.error("Parse Error:", err);
+        }
+    });
+});
+
+function refreshAll() {
+    updateMap();
+    updateCharts();
+    updateKPIs();
+}
+
+function wireControls() {
+    wirePillGroup('metricToggleGroup', (val) => { metric = val; refreshAll(); });
+    wirePillGroup('bedFilterGroup', (val) => { bedFilter = val; updateKPIs(); });
+    wirePillGroup('aggGroup', (val) => { aggLevel = val; updateCharts(); });
+    wirePillGroup('mapModeGroup', (val) => { mapMode = val; updateMap(); });
+
+    const rangeStart = document.getElementById('rangeStart');
+    const rangeEnd = document.getElementById('rangeEnd');
+    rangeStart.addEventListener('input', () => {
+        rangeStartIdx = Math.min(parseInt(rangeStart.value), rangeEndIdx);
+        rangeStart.value = rangeStartIdx;
+        updateRangeReadout();
+        refreshAll();
+    });
+    rangeEnd.addEventListener('input', () => {
+        rangeEndIdx = Math.max(parseInt(rangeEnd.value), rangeStartIdx);
+        rangeEnd.value = rangeEndIdx;
+        updateRangeReadout();
+        refreshAll();
+    });
+}
+
+function wirePillGroup(groupId, onChange) {
+    const group = document.getElementById(groupId);
+    group.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            group.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            onChange(btn.dataset.value);
         });
+    });
+}
 
-        function initMap() {
-            mapInstance = L.map('map').setView(EL_PASO_COORDS, 11);
-            
-            // Grayscale basemap
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-                subdomains: 'abcd',
-                maxZoom: 19
-            }).addTo(mapInstance);
+// ============================================================
+// Date axis / range slider
+// ============================================================
+function buildDateAxis() {
+    const dateSet = new Set(rawData.filter(d => d.capture_date).map(d => d.capture_date));
+    allDates = [...dateSet].sort();
+    rangeStartIdx = 0;
+    rangeEndIdx = allDates.length - 1;
 
-            mapMarkers.addTo(mapInstance);
+    const rangeStart = document.getElementById('rangeStart');
+    const rangeEnd = document.getElementById('rangeEnd');
+    rangeStart.min = 0; rangeStart.max = allDates.length - 1; rangeStart.value = rangeStartIdx;
+    rangeEnd.min = 0; rangeEnd.max = allDates.length - 1; rangeEnd.value = rangeEndIdx;
+
+    updateRangeReadout();
+}
+
+function updateRangeReadout() {
+    const startPct = allDates.length > 1 ? (rangeStartIdx / (allDates.length - 1)) * 100 : 0;
+    const endPct = allDates.length > 1 ? (rangeEndIdx / (allDates.length - 1)) * 100 : 100;
+    const fill = document.getElementById('trackFill');
+    fill.style.left = startPct + '%';
+    fill.style.width = Math.max(endPct - startPct, 0) + '%';
+
+    const startDate = allDates[rangeStartIdx] || '—';
+    const endDate = allDates[rangeEndIdx] || '—';
+    document.getElementById('rangeReadout').textContent = `${startDate} \u2192 ${endDate}  (${rangeEndIdx - rangeStartIdx + 1} of ${allDates.length} weekly pulls)`;
+}
+
+function getSelectedDateRange() {
+    return [allDates[rangeStartIdx], allDates[rangeEndIdx]];
+}
+
+// ============================================================
+// Data processing
+// ============================================================
+function processData() {
+    if (!rawData || rawData.length === 0) return;
+
+    cleanData = rawData.map(d => {
+        const sqft = parseFloat(d.squareFootage);
+        const price = parseFloat(d.price);
+        const priceSqft = (sqft && sqft > 0 && price) ? (price / sqft) : null;
+
+        let bedGroup = null;
+        const b = d.bedrooms;
+        if (b !== null && b !== undefined && b !== '' && !isNaN(b)) {
+            bedGroup = (Number(b) >= 4) ? '4+' : String(Math.floor(Number(b)));
         }
 
-        function processData() {
-            if (!rawData || rawData.length === 0) return;
-            const metric = document.getElementById('metricToggle').value;
-            
-            // Clean and compute derived values
-            cleanData = rawData.map(d => {
-                let sqft = parseFloat(d.squareFootage);
-                let price = parseFloat(d.price);
-                return {
-                    ...d,
-                    price_sqft: (sqft && sqft > 0 && price) ? (price / sqft) : null,
-                    date: d.capture_date,
-                    typeKey: d.propertyType || UNKNOWN_TYPE
-                };
-            }).filter(d => d.date && d.price && (metric === 'monthly' || d.price_sqft !== null))
-              .filter(d => selectedTypes.size === 0 || selectedTypes.has(d.typeKey));
+        return {
+            ...d,
+            price_sqft: priceSqft,
+            date: d.capture_date,
+            typeKey: d.propertyType || UNKNOWN_TYPE,
+            bedGroup
+        };
+    }).filter(d => d.date && d.price); // NOTE: no longer filtered by metric availability -
+                                        // this keeps KPIs/new-construction/etc. identical
+                                        // regardless of the Rent vs $/SqFt toggle.
+}
+
+// Type-filtered + date-range-filtered working set, used by map/charts/KPIs
+function getVisibleData() {
+    const [startDate, endDate] = getSelectedDateRange();
+    return cleanData.filter(d =>
+        (selectedTypes.size === 0 || selectedTypes.has(d.typeKey)) &&
+        d.date >= startDate && d.date <= endDate
+    );
+}
+
+function mean(arr) {
+    if (arr.length === 0) return null;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+// ============================================================
+// Property type filter
+// ============================================================
+function setupTypeSelector() {
+    const typeCounts = {};
+    rawData.forEach(d => {
+        if (!d.capture_date) return;
+        const key = d.propertyType || UNKNOWN_TYPE;
+        typeCounts[key] = (typeCounts[key] || 0) + 1;
+    });
+
+    allTypes = Object.keys(typeCounts).sort((a, b) => {
+        if (a === UNKNOWN_TYPE) return 1;
+        if (b === UNKNOWN_TYPE) return -1;
+        return typeCounts[b] - typeCounts[a];
+    });
+
+    allTypes.forEach(t => selectedTypes.add(t));
+
+    const container = document.getElementById('type-checkboxes');
+    container.innerHTML = '';
+
+    allTypes.forEach(type => {
+        const label = document.createElement('label');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = type;
+        cb.checked = selectedTypes.has(type);
+        cb.onchange = (e) => {
+            if (e.target.checked) selectedTypes.add(type); else selectedTypes.delete(type);
+            refreshAll();
+        };
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(` ${type} (${typeCounts[type]})`));
+        container.appendChild(label);
+    });
+
+    const unknownCount = typeCounts[UNKNOWN_TYPE] || 0;
+    const noteEl = document.getElementById('typeFilterNote');
+    noteEl.textContent = unknownCount > 0
+        ? `Property type is only recorded for listings collected in recent weekly pulls. Older listings are grouped under "${UNKNOWN_TYPE}" — uncheck it to see only fully-detailed data.`
+        : '';
+}
+
+// ============================================================
+// Zip selector
+// ============================================================
+function setupZipSelector() {
+    const zipCounts = {};
+    cleanData.forEach(d => {
+        if (d.zipCode) zipCounts[d.zipCode] = (zipCounts[d.zipCode] || 0) + 1;
+    });
+
+    allZips = Object.keys(zipCounts).sort((a, b) => zipCounts[b] - zipCounts[a]);
+    allZips.slice(0, 5).forEach(z => selectedZips.add(z));
+
+    const zipContainer = document.getElementById('zip-checkboxes');
+    zipContainer.innerHTML = '';
+
+    allZips.forEach(zip => {
+        const label = document.createElement('label');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = zip;
+        cb.checked = selectedZips.has(zip);
+        cb.onchange = (e) => {
+            if (e.target.checked) selectedZips.add(zip); else selectedZips.delete(zip);
+            updateCharts();
+        };
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(` ${zip}`));
+        zipContainer.appendChild(label);
+    });
+}
+
+// ============================================================
+// KPI stat row
+// ============================================================
+function updateKPIs() {
+    const visible = getVisibleData();
+    const ids = ['kpiListings','kpiRent','kpiSqft','kpiDom','kpiNewConst'];
+    if (visible.length === 0) {
+        ids.forEach(id => document.getElementById(id).textContent = '\u2013');
+        return;
+    }
+
+    const dates = [...new Set(visible.map(d => d.date))].sort();
+    const latestDate = dates[dates.length - 1];
+    const prevDate = dates.length > 1 ? dates[dates.length - 2] : null;
+
+    const bedFn = d => bedFilter === 'all' || d.bedGroup === bedFilter;
+
+    const latest = visible.filter(d => d.date === latestDate && bedFn(d));
+    const prev = prevDate ? visible.filter(d => d.date === prevDate && bedFn(d)) : [];
+
+    // Active Listings
+    document.getElementById('kpiListings').textContent = latest.length.toLocaleString();
+    document.getElementById('kpiListingsSub').textContent = `Week of ${latestDate}`;
+    document.getElementById('kpiListingsSub').className = 'sub neutral';
+
+    // Avg Rent
+    const avgRent = mean(latest.map(d => d.price));
+    setStatWithDelta('kpiRent', 'kpiRentSub', avgRent, prev.map(d => d.price), (v) => `$${Math.round(v).toLocaleString()}`, false);
+
+    // Avg $ / Sqft
+    const sqftVals = latest.filter(d => d.price_sqft !== null).map(d => d.price_sqft);
+    const prevSqftVals = prev.filter(d => d.price_sqft !== null).map(d => d.price_sqft);
+    const avgSqft = mean(sqftVals);
+    setStatWithDelta('kpiSqft', 'kpiSqftSub', avgSqft, prevSqftVals, (v) => `$${v.toFixed(2)}`, false);
+
+    // Avg Days on Market
+    const domVals = latest.filter(d => d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '' && !isNaN(d.daysOnMarket)).map(d => Number(d.daysOnMarket));
+    const prevDomVals = prev.filter(d => d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '' && !isNaN(d.daysOnMarket)).map(d => Number(d.daysOnMarket));
+    if (domVals.length > 0) {
+        const avgDom = mean(domVals);
+        setStatWithDelta('kpiDom', 'kpiDomSub', avgDom, prevDomVals, (v) => `${Math.round(v)} days`, true);
+    } else {
+        document.getElementById('kpiDom').textContent = '\u2014';
+        document.getElementById('kpiDomSub').textContent = 'Not available for this selection';
+        document.getElementById('kpiDomSub').className = 'sub neutral';
+    }
+
+    // New Construction Share
+    const typedVals = latest.filter(d => d.listingType);
+    if (typedVals.length > 0) {
+        const pct = (typedVals.filter(d => d.listingType === 'New Construction').length / typedVals.length) * 100;
+        document.getElementById('kpiNewConst').textContent = `${pct.toFixed(1)}%`;
+        document.getElementById('kpiNewConstSub').textContent = `As of ${latestDate}`;
+        document.getElementById('kpiNewConstSub').className = 'sub neutral';
+    } else {
+        document.getElementById('kpiNewConst').textContent = '\u2014';
+        document.getElementById('kpiNewConstSub').textContent = 'Not available for this selection';
+        document.getElementById('kpiNewConstSub').className = 'sub neutral';
+    }
+}
+
+// higherIsBad: true means an increase should be styled as "up/red" being unfavorable framing reversed (e.g. days on market rising is bad -> red already default). We keep rent/sqft rising = red (cost increase), dom rising = red (slower market), consistent "red = higher number" semantics throughout.
+function setStatWithDelta(valueId, subId, value, prevArr, formatFn, isDom) {
+    const valueEl = document.getElementById(valueId);
+    const subEl = document.getElementById(subId);
+    if (value === null) {
+        valueEl.textContent = '\u2014';
+        subEl.textContent = 'Not available for this selection';
+        subEl.className = 'sub neutral';
+        return;
+    }
+    valueEl.textContent = formatFn(value);
+    const prevMean = mean(prevArr);
+    if (prevMean !== null && prevMean !== 0) {
+        const pctChange = ((value - prevMean) / prevMean) * 100;
+        const arrow = pctChange >= 0 ? '\u25B2' : '\u25BC';
+        const cls = pctChange >= 0 ? 'up' : 'down';
+        subEl.innerHTML = `${arrow} ${Math.abs(pctChange).toFixed(1)}% vs prior pull`;
+        subEl.className = `sub ${cls}`;
+    } else {
+        subEl.textContent = 'No prior pull to compare';
+        subEl.className = 'sub neutral';
+    }
+}
+
+// ============================================================
+// Coverage banner
+// ============================================================
+function updateCoverageBanner() {
+    const withType = rawData.filter(d => d.propertyType && d.capture_date);
+    if (withType.length === 0) return;
+
+    const coverageStart = withType.map(d => d.capture_date).sort()[0];
+    const earliestDate = allDates[0];
+    if (coverageStart === earliestDate) return;
+    if (localStorage.getItem('coverageBannerDismissed') === coverageStart) return;
+
+    const banner = document.getElementById('coverageBanner');
+    document.getElementById('coverageBannerText').textContent =
+        `Detailed property attributes (type, days on market, listing status, HOA fees, etc.) are recorded starting with the ${coverageStart} pull. Earlier weeks include core fields only (rent, beds, baths, sqft, location).`;
+    banner.classList.remove('hidden');
+
+    document.getElementById('coverageBannerClose').onclick = () => {
+        banner.classList.add('hidden');
+        localStorage.setItem('coverageBannerDismissed', coverageStart);
+    };
+}
+
+// ============================================================
+// Map: projection + hex binning helpers
+// ============================================================
+function project(lat, lon) {
+    const R = 6371000;
+    const x = (lon - PROJ_LON0) * Math.PI / 180 * R * Math.cos(PROJ_LAT0 * Math.PI / 180);
+    const y = (lat - PROJ_LAT0) * Math.PI / 180 * R;
+    return [x, y];
+}
+function unproject(x, y) {
+    const R = 6371000;
+    const lat = PROJ_LAT0 + (y / R) * 180 / Math.PI;
+    const lon = PROJ_LON0 + (x / (R * Math.cos(PROJ_LAT0 * Math.PI / 180))) * 180 / Math.PI;
+    return [lat, lon];
+}
+function axialRound(qf, rf) {
+    let x = qf, z = rf, y = -x - z;
+    let rx = Math.round(x), ry = Math.round(y), rz = Math.round(z);
+    const xDiff = Math.abs(rx - x), yDiff = Math.abs(ry - y), zDiff = Math.abs(rz - z);
+    if (xDiff > yDiff && xDiff > zDiff) rx = -ry - rz;
+    else if (yDiff > zDiff) ry = -rx - rz;
+    else rz = -rx - ry;
+    return [rx, rz];
+}
+function pixelToAxial(x, y, size) {
+    const q = (Math.sqrt(3) / 3 * x - 1 / 3 * y) / size;
+    const r = (2 / 3 * y) / size;
+    return axialRound(q, r);
+}
+function axialToPixel(q, r, size) {
+    const x = size * (Math.sqrt(3) * q + Math.sqrt(3) / 2 * r);
+    const y = size * (3 / 2 * r);
+    return [x, y];
+}
+function hexCorners(cx, cy, size) {
+    const corners = [];
+    for (let i = 0; i < 6; i++) {
+        const angle = Math.PI / 180 * (60 * i - 30);
+        corners.push([cx + size * Math.cos(angle), cy + size * Math.sin(angle)]);
+    }
+    return corners;
+}
+function computeHexBins(rows, metricGetter) {
+    const bins = {};
+    rows.forEach(d => {
+        if (!d.latitude || !d.longitude) return;
+        const [x, y] = project(d.latitude, d.longitude);
+        const [q, r] = pixelToAxial(x, y, HEX_SIZE_M);
+        const key = q + ',' + r;
+        if (!bins[key]) bins[key] = { q, r, values: [], count: 0 };
+        const v = metricGetter(d);
+        if (v !== null) bins[key].values.push(v);
+        bins[key].count++;
+    });
+    return Object.values(bins).map(b => ({
+        ...b,
+        avg: b.values.length ? mean(b.values) : null
+    }));
+}
+
+function colorForValue(val, m) {
+    if (val === null || val === undefined) return '#94a3b8';
+    if (m === 'monthly') {
+        return val > 2000 ? '#b3271e' : val > 1400 ? '#d97706' : '#0a7a4b';
+    }
+    return val > 1.5 ? '#b3271e' : val > 1.10 ? '#d97706' : '#0a7a4b';
+}
+
+// ============================================================
+// Map rendering
+// ============================================================
+function initMap() {
+    mapInstance = L.map('map', { zoomControl: true }).setView(EL_PASO_COORDS, 11);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19
+    }).addTo(mapInstance);
+    mapMarkers.addTo(mapInstance);
+}
+
+function updateMap() {
+    const visible = getVisibleData();
+    mapMarkers.clearLayers();
+    if (visible.length === 0) return;
+
+    const dates = [...new Set(visible.map(d => d.date))].sort();
+    const latestDate = dates[dates.length - 1];
+    const latestData = visible.filter(d => d.date === latestDate && d.latitude && d.longitude);
+
+    const metricGetter = d => metric === 'monthly' ? d.price : d.price_sqft;
+
+    if (mapMode === 'points') {
+        latestData.forEach(d => {
+            const val = metricGetter(d);
+            if (val === null || val === undefined) return;
+            const radius = metric === 'monthly' ? Math.min(Math.max(val / 300, 3), 12) : Math.min(Math.max(val * 4, 3), 12);
+            const color = colorForValue(val, metric);
+
+            let extraLines = '';
+            if (d.propertyType) extraLines += `Type: ${d.propertyType}<br>`;
+            if (d.yearBuilt) extraLines += `Year Built: ${d.yearBuilt}<br>`;
+            if (d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '') extraLines += `Days on Market: ${d.daysOnMarket}<br>`;
+            if (d.status) extraLines += `Status: ${d.status}<br>`;
+            if (d.hoa_fee) extraLines += `HOA: $${d.hoa_fee}/mo<br>`;
+
+            const popupContent = `
+                <b>${d.formattedAddress || 'Address Unknown'}</b><br>
+                Zip: ${d.zipCode}<br>
+                Beds: ${d.bedrooms} | Baths: ${d.bathrooms}<br>
+                SqFt: ${d.squareFootage || 'N/A'}<br>
+                Rent: $${d.price}<br>
+                $/SqFt: ${d.price_sqft ? '$' + d.price_sqft.toFixed(2) : 'N/A'}<br>
+                ${extraLines}
+            `;
+
+            L.circleMarker([d.latitude, d.longitude], {
+                radius, fillColor: color, color: "#111111", weight: 1, opacity: 1, fillOpacity: 0.75
+            }).bindPopup(popupContent).addTo(mapMarkers);
+        });
+    } else {
+        const bins = computeHexBins(latestData, metricGetter);
+        const maxCount = Math.max(...bins.map(b => b.count), 1);
+        bins.forEach(b => {
+            const [cx, cy] = axialToPixel(b.q, b.r, HEX_SIZE_M);
+            const corners = hexCorners(cx, cy, HEX_SIZE_M * 0.95).map(([x, y]) => unproject(x, y));
+            const color = colorForValue(b.avg, metric);
+            const opacity = 0.35 + 0.5 * (b.count / maxCount);
+            L.polygon(corners, {
+                color: '#111111', weight: 1.2, fillColor: color, fillOpacity: opacity
+            }).bindPopup(`
+                <b>${b.count} listing${b.count === 1 ? '' : 's'}</b><br>
+                Avg ${metric === 'monthly' ? 'Rent' : '$/SqFt'}: ${b.avg !== null ? (metric === 'monthly' ? '$' + Math.round(b.avg).toLocaleString() : '$' + b.avg.toFixed(2)) : 'N/A'}
+            `).addTo(mapMarkers);
+        });
+    }
+
+    if (mapLegend) mapInstance.removeControl(mapLegend);
+    mapLegend = L.control({ position: 'bottomright' });
+    mapLegend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'info legend');
+        let html = `<strong>${metric === 'monthly' ? 'Monthly Rent' : 'Price / SqFt'}</strong><br>`;
+        if (metric === 'monthly') {
+            html += '<i style="background:#b3271e"></i> &gt; $2,000<br>';
+            html += '<i style="background:#d97706"></i> $1,400 &ndash; $2,000<br>';
+            html += '<i style="background:#0a7a4b"></i> &lt; $1,400<br>';
+        } else {
+            html += '<i style="background:#b3271e"></i> &gt; $1.50<br>';
+            html += '<i style="background:#d97706"></i> $1.10 &ndash; $1.50<br>';
+            html += '<i style="background:#0a7a4b"></i> &lt; $1.10<br>';
         }
-
-        function setupZipSelector() {
-            // Find counts to determine top 5 for defaults
-            const zipCounts = {};
-            cleanData.forEach(d => {
-                if (d.zipCode) zipCounts[d.zipCode] = (zipCounts[d.zipCode] || 0) + 1;
-            });
-            
-            allZips = Object.keys(zipCounts).sort((a, b) => zipCounts[b] - zipCounts[a]);
-            
-            // Default to top 5 zips
-            allZips.slice(0, 5).forEach(z => selectedZips.add(z));
-
-            const zipContainer = document.getElementById('zip-checkboxes');
-            zipContainer.innerHTML = '';
-            
-            allZips.forEach(zip => {
-                const label = document.createElement('label');
-                const cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.value = zip;
-                cb.checked = selectedZips.has(zip);
-                
-                // When checked/unchecked, only redraw charts
-                cb.onchange = (e) => {
-                    if (e.target.checked) {
-                        selectedZips.add(zip);
-                    } else {
-                        selectedZips.delete(zip);
-                    }
-                    updateCharts();
-                };
-                
-                label.appendChild(cb);
-                label.appendChild(document.createTextNode(` ${zip}`));
-                zipContainer.appendChild(label);
-            });
+        if (mapMode === 'points') {
+            html += '<hr style="margin:8px 0 5px 0;border-top:1.5px solid #111;">';
+            html += '<span style="font-size:0.78rem;">Larger circle = higher price</span>';
+        } else {
+            html += '<hr style="margin:8px 0 5px 0;border-top:1.5px solid #111;">';
+            html += '<span style="font-size:0.78rem;">Darker hex = more listings</span>';
         }
+        div.innerHTML = html;
+        return div;
+    };
+    mapLegend.addTo(mapInstance);
+}
 
-        function setupTypeSelector() {
-            // Build type list from raw (unfiltered) data so the filter itself isn't self-limiting
-            const typeCounts = {};
-            rawData.forEach(d => {
-                if (!d.date && !d.capture_date) return;
-                const key = d.propertyType || UNKNOWN_TYPE;
-                typeCounts[key] = (typeCounts[key] || 0) + 1;
-            });
+// ============================================================
+// Aggregation helper for time-series charts
+// ============================================================
+function getPeriodKey(dateStr, level) {
+    if (level === 'week') return dateStr;
+    const d = new Date(dateStr + 'T00:00:00');
+    if (level === 'month') return dateStr.slice(0, 7);
+    if (level === 'quarter') {
+        const q = Math.floor(d.getMonth() / 3) + 1;
+        return `${d.getFullYear()}-Q${q}`;
+    }
+    if (level === 'year') return String(d.getFullYear());
+    return dateStr;
+}
 
-            allTypes = Object.keys(typeCounts).sort((a, b) => {
-                if (a === UNKNOWN_TYPE) return 1;
-                if (b === UNKNOWN_TYPE) return -1;
-                return typeCounts[b] - typeCounts[a];
-            });
+function seriesByPeriod(rows, level, metricFn) {
+    const groups = {};
+    rows.forEach(d => {
+        const k = getPeriodKey(d.date, level);
+        if (!groups[k]) groups[k] = [];
+        const v = metricFn(d);
+        if (v !== null && v !== undefined) groups[k].push(v);
+    });
+    return groups;
+}
 
-            // Default: everything selected (no filtering out-of-the-box)
-            allTypes.forEach(t => selectedTypes.add(t));
+// ============================================================
+// Charts
+// ============================================================
+function updateCharts() {
+    const visible = getVisibleData();
+    if (visible.length === 0) return;
 
-            const container = document.getElementById('type-checkboxes');
-            container.innerHTML = '';
+    const metricFn = d => metric === 'monthly' ? d.price : d.price_sqft;
+    const yAxisLabel = metric === 'monthly' ? 'Average Rent ($)' : 'Average Price / SqFt ($)';
 
-            allTypes.forEach(type => {
-                const label = document.createElement('label');
-                const cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.value = type;
-                cb.checked = selectedTypes.has(type);
+    const periods = [...new Set(visible.map(d => getPeriodKey(d.date, aggLevel)))].sort();
 
-                cb.onchange = (e) => {
-                    if (e.target.checked) {
-                        selectedTypes.add(type);
-                    } else {
-                        selectedTypes.delete(type);
-                    }
-                    processData();
-                    updateMap();
-                    updateCharts();
-                    updateKPIs();
-                };
+    // Citywide average
+    const citywideGroups = seriesByPeriod(visible, aggLevel, metricFn);
+    const citywideData = periods.map(p => citywideGroups[p] ? mean(citywideGroups[p]) : null);
+    const citywideDataset = {
+        label: 'Citywide Average', data: citywideData,
+        borderColor: '#55524a', backgroundColor: '#55524a',
+        borderDash: [5, 5], borderWidth: 2, pointRadius: 3, fill: false, tension: 0.15, order: -1
+    };
 
-                label.appendChild(cb);
-                const displayName = type === UNKNOWN_TYPE ? `${type} (${typeCounts[type]})` : `${type} (${typeCounts[type]})`;
-                label.appendChild(document.createTextNode(` ${displayName}`));
-                container.appendChild(label);
-            });
+    // Bedroom trend chart
+    const bedGroups = ['1', '2', '3', '4+'];
+    const bedDatasets = bedGroups.map((bg, idx) => {
+        const rows = visible.filter(d => d.bedGroup === bg);
+        const groups = seriesByPeriod(rows, aggLevel, metricFn);
+        const dataPoints = periods.map(p => groups[p] ? mean(groups[p]) : null);
+        return {
+            label: `${bg} Bedroom${bg === '1' ? '' : 's'}`, data: dataPoints,
+            borderColor: colors[idx], backgroundColor: colors[idx], fill: false, tension: 0.15
+        };
+    });
 
-            const unknownCount = typeCounts[UNKNOWN_TYPE] || 0;
-            const noteEl = document.getElementById('typeFilterNote');
-            if (unknownCount > 0) {
-                noteEl.textContent = `Property type is only recorded for listings collected in recent weekly pulls. Older listings are grouped under "${UNKNOWN_TYPE}" — uncheck it to see only fully-detailed data.`;
-            } else {
-                noteEl.textContent = '';
+    // Inventory breakdown (share of listings per period, by bedroom group)
+    const inventoryDatasets = bedGroups.map((bg, idx) => {
+        const dataPoints = periods.map(p => {
+            const periodRows = visible.filter(d => getPeriodKey(d.date, aggLevel) === p);
+            if (periodRows.length === 0) return 0;
+            const matching = periodRows.filter(d => d.bedGroup === bg);
+            return (matching.length / periodRows.length) * 100;
+        });
+        return { label: `${bg} Bedroom${bg === '1' ? '' : 's'}`, data: dataPoints, backgroundColor: colors[idx] + 'CC' };
+    });
+
+    // Zip trend chart
+    const activeZips = Array.from(selectedZips);
+    const zipDatasets = activeZips.map((zip, idx) => {
+        const color = colors[idx % colors.length];
+        const rows = visible.filter(d => String(d.zipCode) === String(zip));
+        const groups = seriesByPeriod(rows, aggLevel, metricFn);
+        const dataPoints = periods.map(p => groups[p] ? mean(groups[p]) : null);
+        return { label: `Zip ${zip}`, data: dataPoints, borderColor: color, backgroundColor: color, fill: false, tension: 0.15 };
+    });
+
+    const bedLineDatasets = [citywideDataset, ...bedDatasets];
+    const zipLineDatasets = [citywideDataset, ...zipDatasets];
+
+    const gridColor = '#e2ddd0';
+    const commonFont = { family: 'Space Grotesk' };
+
+    if (bedChartInstance) bedChartInstance.destroy();
+    bedChartInstance = new Chart(document.getElementById('bedChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: periods, datasets: bedLineDatasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { font: commonFont } } },
+            scales: {
+                y: { title: { display: true, text: yAxisLabel, font: commonFont }, grid: { color: gridColor } },
+                x: { title: { display: true, text: aggLabel(), font: commonFont }, grid: { color: gridColor } }
             }
         }
+    });
 
-        function updateKPIs() {
-            if (cleanData.length === 0) return;
-            const dates = [...new Set(cleanData.map(d => d.date))].sort();
-            const latestDate = dates[dates.length - 1];
-            const prevDate = dates.length > 1 ? dates[dates.length - 2] : null;
-
-            const latest = cleanData.filter(d => d.date === latestDate);
-            const prev = prevDate ? cleanData.filter(d => d.date === prevDate) : [];
-
-            // Active Listings
-            document.getElementById('kpiListings').textContent = latest.length.toLocaleString();
-            document.getElementById('kpiListingsSub').textContent = `As of ${latestDate}`;
-
-            // Avg Rent + WoW change
-            const avgRent = latest.reduce((a, d) => a + d.price, 0) / latest.length;
-            document.getElementById('kpiRent').textContent = `$${Math.round(avgRent).toLocaleString()}`;
-            if (prev.length > 0) {
-                const prevAvgRent = prev.reduce((a, d) => a + d.price, 0) / prev.length;
-                const pctChange = ((avgRent - prevAvgRent) / prevAvgRent) * 100;
-                const arrow = pctChange >= 0 ? '▲' : '▼';
-                const cls = pctChange >= 0 ? 'up' : 'down';
-                document.getElementById('kpiRentSub').innerHTML =
-                    `<span class="kpi-delta ${cls}">${arrow} ${Math.abs(pctChange).toFixed(1)}% vs prior pull</span>`;
-            } else {
-                document.getElementById('kpiRentSub').textContent = 'No prior pull to compare';
-            }
-
-            // Avg Days on Market
-            const domVals = latest.filter(d => d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '' && !isNaN(d.daysOnMarket));
-            if (domVals.length > 0) {
-                const avgDom = domVals.reduce((a, d) => a + Number(d.daysOnMarket), 0) / domVals.length;
-                document.getElementById('kpiDom').textContent = `${Math.round(avgDom)} days`;
-                document.getElementById('kpiDomSub').textContent = `Based on ${domVals.length} of ${latest.length} listings`;
-            } else {
-                document.getElementById('kpiDom').textContent = '—';
-                document.getElementById('kpiDomSub').textContent = 'Not yet available for this pull';
-            }
-
-            // New Construction Share
-            const typedVals = latest.filter(d => d.listingType);
-            if (typedVals.length > 0) {
-                const newConstCount = typedVals.filter(d => d.listingType === 'New Construction').length;
-                const pct = (newConstCount / typedVals.length) * 100;
-                document.getElementById('kpiNewConst').textContent = `${pct.toFixed(1)}%`;
-                document.getElementById('kpiNewConstSub').textContent = `Based on ${typedVals.length} of ${latest.length} listings`;
-            } else {
-                document.getElementById('kpiNewConst').textContent = '—';
-                document.getElementById('kpiNewConstSub').textContent = 'Not yet available for this pull';
+    if (zipChartInstance) zipChartInstance.destroy();
+    zipChartInstance = new Chart(document.getElementById('zipChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: periods, datasets: zipLineDatasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { font: commonFont } } },
+            scales: {
+                y: { title: { display: true, text: yAxisLabel, font: commonFont }, grid: { color: gridColor } },
+                x: { title: { display: true, text: aggLabel(), font: commonFont }, grid: { color: gridColor } }
             }
         }
+    });
 
-        function updateCoverageBanner() {
-            const withType = rawData.filter(d => d.propertyType && d.capture_date);
-            if (withType.length === 0) return; // nothing to announce yet
-
-            const coverageStart = withType.map(d => d.capture_date).sort()[0];
-            const allDates = [...new Set(rawData.filter(d => d.capture_date).map(d => d.capture_date))].sort();
-            const earliestDate = allDates[0];
-
-            if (coverageStart === earliestDate) return; // full history already has detail, nothing to flag
-
-            if (localStorage.getItem('coverageBannerDismissed') === coverageStart) return;
-
-            const banner = document.getElementById('coverageBanner');
-            document.getElementById('coverageBannerText').textContent =
-                `ℹ️ Detailed property attributes (type, days on market, listing status, HOA fees, etc.) are recorded starting with the ${coverageStart} pull. Earlier weeks include core fields only (rent, beds, baths, sqft, location).`;
-            banner.classList.remove('hidden');
-
-            document.getElementById('coverageBannerClose').onclick = () => {
-                banner.classList.add('hidden');
-                localStorage.setItem('coverageBannerDismissed', coverageStart);
-            };
-        }
-
-        function updateMap() {
-            if (cleanData.length === 0) return;
-            mapMarkers.clearLayers();
-            const metric = document.getElementById('metricToggle').value;
-
-            // Find the most recent date to display current spatial distribution
-            const dates = [...new Set(cleanData.map(d => d.date))].sort();
-            const latestDate = dates[dates.length - 1];
-            const latestData = cleanData.filter(d => d.date === latestDate && d.latitude && d.longitude);
-
-            latestData.forEach(d => {
-                const val = metric === 'monthly' ? d.price : d.price_sqft;
-                const radius = metric === 'monthly' ? Math.min(Math.max(val / 300, 3), 12) : Math.min(Math.max(val * 4, 3), 12);
-                
-                let color = val > (metric === 'monthly' ? 2000 : 1.5) ? '#dc2626' : 
-                            val > (metric === 'monthly' ? 1400 : 1.1) ? '#d97706' : '#16a34a';
-
-                let extraLines = '';
-                if (d.propertyType) extraLines += `Type: ${d.propertyType}<br>`;
-                if (d.yearBuilt) extraLines += `Year Built: ${d.yearBuilt}<br>`;
-                if (d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '') extraLines += `Days on Market: ${d.daysOnMarket}<br>`;
-                if (d.status) extraLines += `Status: ${d.status}<br>`;
-                if (d.hoa_fee) extraLines += `HOA: $${d.hoa_fee}/mo<br>`;
-
-                const popupContent = `
-                    <b>${d.formattedAddress || 'Address Unknown'}</b><br>
-                    Zip: ${d.zipCode}<br>
-                    Beds: ${d.bedrooms} | Baths: ${d.bathrooms}<br>
-                    SqFt: ${d.squareFootage || 'N/A'}<br>
-                    Rent: $${d.price}<br>
-                    $/SqFt: ${d.price_sqft ? '$' + d.price_sqft.toFixed(2) : 'N/A'}<br>
-                    ${extraLines}
-                `;
-
-                L.circleMarker([d.latitude, d.longitude], {
-                    radius: radius,
-                    fillColor: color,
-                    color: "#ffffff",
-                    weight: 1,
-                    opacity: 1,
-                    fillOpacity: 0.7
-                }).bindPopup(popupContent).addTo(mapMarkers);
-            });
-
-            // Update Map Legend
-            if (mapLegend) {
-                mapInstance.removeControl(mapLegend);
+    if (inventoryChartInstance) inventoryChartInstance.destroy();
+    inventoryChartInstance = new Chart(document.getElementById('inventoryChart').getContext('2d'), {
+        type: 'bar',
+        data: { labels: periods, datasets: inventoryDatasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { font: commonFont } },
+                tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%' } }
+            },
+            scales: {
+                x: { stacked: true, title: { display: true, text: aggLabel(), font: commonFont }, grid: { color: gridColor } },
+                y: { stacked: true, min: 0, max: 100, title: { display: true, text: 'Percentage of Market (%)', font: commonFont }, ticks: { callback: (v) => v + '%' }, grid: { color: gridColor } }
             }
-
-            mapLegend = L.control({position: 'bottomright'});
-            mapLegend.onAdd = function () {
-                const div = L.DomUtil.create('div', 'info legend');
-                let html = `<strong>${metric === 'monthly' ? 'Monthly Rent' : 'Price / SqFt'}</strong><br>`;
-                
-                if (metric === 'monthly') {
-                    html += '<i style="background: #dc2626"></i> > $2,000<br>';
-                    html += '<i style="background: #d97706"></i> $1,400 &ndash; $2,000<br>';
-                    html += '<i style="background: #16a34a"></i> < $1,400<br>';
-                } else {
-                    html += '<i style="background: #dc2626"></i> > $1.50<br>';
-                    html += '<i style="background: #d97706"></i> $1.10 &ndash; $1.50<br>';
-                    html += '<i style="background: #16a34a"></i> < $1.10<br>';
-                }
-                
-                html += '<hr style="margin: 8px 0 5px 0; border-top: 1px solid #e2e8f0;">';
-                html += '<div style="display:flex; align-items:center; gap: 6px; font-size: 0.8rem;">';
-                html += '<div style="width: 6px; height: 6px; background: #64748b; border-radius: 50%;"></div>';
-                html += '<div style="width: 14px; height: 14px; background: #64748b; border-radius: 50%;"></div>';
-                html += '<span>Larger size = Higher price</span>';
-                html += '</div>';
-
-                div.innerHTML = html;
-                return div;
-            };
-            mapLegend.addTo(mapInstance);
         }
+    });
+}
 
-        function updateCharts() {
-            if (cleanData.length === 0) return;
-            const metric = document.getElementById('metricToggle').value;
-            const dates = [...new Set(cleanData.map(d => d.date))].sort();
-            const yAxisLabel = metric === 'monthly' ? 'Average Rent ($)' : 'Average Price / SqFt ($)';
-
-            // --- 0. Shared Dataset: Citywide Average ---
-            const citywideData = dates.map(date => {
-                const filtered = cleanData.filter(d => d.date === date);
-                if (filtered.length === 0) return null;
-                const sum = filtered.reduce((acc, curr) => acc + (metric === 'monthly' ? curr.price : curr.price_sqft), 0);
-                return sum / filtered.length;
-            });
-
-            const citywideDataset = {
-                label: 'Citywide Average',
-                data: citywideData,
-                borderColor: '#475569', // Slate gray
-                backgroundColor: '#475569',
-                borderDash: [5, 5], // Creates the dashed line
-                borderWidth: 2,
-                pointRadius: 3,
-                fill: false,
-                tension: 0.1,
-                order: -1 // Ensure dashed line renders on top
-            };
-
-            // --- 1. Aggregation by Bedrooms (Line Chart) ---
-            const bedGroups = ['1', '2', '3', '4+'];
-            const bedDatasets = bedGroups.map((bg, idx) => {
-                const dataPoints = dates.map(date => {
-                    const filtered = cleanData.filter(d => {
-                        if (d.date !== date) return false;
-                        if (bg === '4+') return d.bedrooms >= 4;
-                        return Math.floor(d.bedrooms) == bg;
-                    });
-                    if (filtered.length === 0) return null;
-                    const sum = filtered.reduce((acc, curr) => acc + (metric === 'monthly' ? curr.price : curr.price_sqft), 0);
-                    return sum / filtered.length;
-                });
-                return {
-                    label: `${bg} Bedrooms`,
-                    data: dataPoints,
-                    borderColor: colors[idx],
-                    backgroundColor: colors[idx],
-                    fill: false,
-                    tension: 0.1
-                };
-            });
-            
-            // --- 2. Inventory Breakdown (Stacked Bar Chart) ---
-            // Calculate % breakdown of total inventory by bedroom count per week
-            const inventoryDatasets = bedGroups.map((bg, idx) => {
-                const dataPoints = dates.map(date => {
-                    const allListingsOnDate = cleanData.filter(d => d.date === date);
-                    if (allListingsOnDate.length === 0) return 0;
-                    
-                    const listingsMatchingBeds = allListingsOnDate.filter(d => {
-                        if (bg === '4+') return d.bedrooms >= 4;
-                        return Math.floor(d.bedrooms) == bg;
-                    });
-                    
-                    // Return percentage (0 to 100)
-                    return (listingsMatchingBeds.length / allListingsOnDate.length) * 100;
-                });
-                
-                return {
-                    label: `${bg} Bedrooms`,
-                    data: dataPoints,
-                    backgroundColor: colors[idx],
-                    // Apply subtle transparency to bar fills
-                    backgroundColor: colors[idx] + 'CC', 
-                };
-            });
-
-            // --- 3. Aggregation by Dynamic Zip Codes (Line Chart) ---
-            const activeZips = Array.from(selectedZips);
-            const zipDatasets = activeZips.map((zip, idx) => {
-                const color = colors[idx % colors.length]; 
-                const dataPoints = dates.map(date => {
-                    const filtered = cleanData.filter(d => d.date === date && String(d.zipCode) === String(zip));
-                    if (filtered.length === 0) return null;
-                    const sum = filtered.reduce((acc, curr) => acc + (metric === 'monthly' ? curr.price : curr.price_sqft), 0);
-                    return sum / filtered.length;
-                });
-                return {
-                    label: `Zip ${zip}`,
-                    data: dataPoints,
-                    borderColor: color,
-                    backgroundColor: color,
-                    fill: false,
-                    tension: 0.1
-                };
-            });
-            
-            // Inject citywide line into line charts
-            const bedLineDatasets = [citywideDataset, ...bedDatasets];
-            const zipLineDatasets = [citywideDataset, ...zipDatasets];
-
-            // --- Render Bed Chart ---
-            if (bedChartInstance) bedChartInstance.destroy();
-            const ctxBed = document.getElementById('bedChart').getContext('2d');
-            bedChartInstance = new Chart(ctxBed, {
-                type: 'line',
-                data: { labels: dates, datasets: bedLineDatasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { 
-                        title: { display: false },
-                        legend: { position: 'bottom' }
-                    },
-                    scales: {
-                        y: { title: { display: true, text: yAxisLabel } },
-                        x: { title: { display: true, text: 'Capture Date' } }
-                    }
-                }
-            });
-
-            // --- Render Zip Chart ---
-            if (zipChartInstance) zipChartInstance.destroy();
-            const ctxZip = document.getElementById('zipChart').getContext('2d');
-            zipChartInstance = new Chart(ctxZip, {
-                type: 'line',
-                data: { labels: dates, datasets: zipLineDatasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { 
-                        title: { display: false },
-                        legend: { position: 'bottom' }
-                    },
-                    scales: {
-                        y: { title: { display: true, text: yAxisLabel } },
-                        x: { title: { display: true, text: 'Capture Date' } }
-                    }
-                }
-            });
-
-            // --- Render Inventory Stacked Bar Chart ---
-            if (inventoryChartInstance) inventoryChartInstance.destroy();
-            const ctxInv = document.getElementById('inventoryChart').getContext('2d');
-            inventoryChartInstance = new Chart(ctxInv, {
-                type: 'bar',
-                data: { labels: dates, datasets: inventoryDatasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { 
-                        title: { display: false },
-                        legend: { position: 'bottom' },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + '%';
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: { 
-                            stacked: true,
-                            title: { display: true, text: 'Capture Date' }
-                        },
-                        y: { 
-                            stacked: true,
-                            min: 0,
-                            max: 100,
-                            title: { display: true, text: 'Percentage of Market (%)' },
-                            ticks: {
-                                callback: function(value) {
-                                    return value + '%';
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-    </script>
+function aggLabel() {
+    return { week: 'Capture Date (Weekly)', month: 'Month', quarter: 'Quarter', year: 'Year' }[aggLevel];
+}
+</script>
 </body>
 </html>
