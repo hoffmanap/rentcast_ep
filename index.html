@@ -303,7 +303,7 @@
 
 <div class="stat-row" id="kpiRow">
   <div class="stat-box">
-    <div class="lbl">Active Listings</div>
+    <div class="lbl">Listings Observed</div>
     <div class="num" id="kpiListings">&ndash;</div>
     <div class="sub neutral" id="kpiListingsSub">&nbsp;</div>
   </div>
@@ -643,36 +643,72 @@ function updateKPIs() {
         return;
     }
 
-    const dates = [...new Set(visible.map(d => d.date))].sort();
-    const latestDate = dates[dates.length - 1];
-    const prevDate = dates.length > 1 ? dates[dates.length - 2] : null;
-
     const bedFn = d => bedFilter === 'all' || d.bedGroup === bedFilter;
+    const filtered = visible.filter(bedFn);
 
-    const latest = visible.filter(d => d.date === latestDate && bedFn(d));
-    const prev = prevDate ? visible.filter(d => d.date === prevDate && bedFn(d)) : [];
+    const dates = [...new Set(filtered.map(d => d.date))].sort();
 
-    // Active Listings
-    document.getElementById('kpiListings').textContent = latest.length.toLocaleString();
-    document.getElementById('kpiListingsSub').textContent = `Week of ${latestDate}`;
+    // Comparison basis: if a single week is selected, compare to the pull immediately
+    // before it (even if outside the slider range). If multiple weeks are selected,
+    // compare the earlier half of the window to the later half. Either way, the
+    // headline number itself always reflects EVERY row in the current selection.
+    let comparison = null;
+    if (dates.length <= 1) {
+        const singleDate = dates[0];
+        const idx = allDates.indexOf(singleDate);
+        if (idx > 0) {
+            const prevDate = allDates[idx - 1];
+            const prevRows = cleanData.filter(d =>
+                d.date === prevDate &&
+                (selectedTypes.size === 0 || selectedTypes.has(d.typeKey)) &&
+                bedFn(d)
+            );
+            comparison = { label: 'vs prior pull', prevRows, curRows: filtered };
+        }
+    } else {
+        const mid = Math.ceil(dates.length / 2);
+        const earlierDates = new Set(dates.slice(0, mid));
+        const laterDates = new Set(dates.slice(mid));
+        comparison = {
+            label: 'vs earlier half of window',
+            prevRows: filtered.filter(d => earlierDates.has(d.date)),
+            curRows: filtered.filter(d => laterDates.has(d.date))
+        };
+    }
+
+    // Listings Observed (every row in the selected window — will exceed 500 once
+    // more than one weekly pull is selected)
+    document.getElementById('kpiListings').textContent = filtered.length.toLocaleString();
+    document.getElementById('kpiListingsSub').textContent = `Across ${dates.length} weekly pull${dates.length === 1 ? '' : 's'}`;
     document.getElementById('kpiListingsSub').className = 'sub neutral';
 
     // Avg Rent
-    const avgRent = mean(latest.map(d => d.price));
-    setStatWithDelta('kpiRent', 'kpiRentSub', avgRent, prev.map(d => d.price), (v) => `$${Math.round(v).toLocaleString()}`, false);
+    const avgRent = mean(filtered.map(d => d.price));
+    setStatWithDelta('kpiRent', 'kpiRentSub', avgRent,
+        comparison ? comparison.prevRows.map(d => d.price) : null,
+        comparison ? comparison.curRows.map(d => d.price) : null,
+        comparison ? comparison.label : null,
+        (v) => `$${Math.round(v).toLocaleString()}`);
 
     // Avg $ / Sqft
-    const sqftVals = latest.filter(d => d.price_sqft !== null).map(d => d.price_sqft);
-    const prevSqftVals = prev.filter(d => d.price_sqft !== null).map(d => d.price_sqft);
+    const sqftVals = filtered.filter(d => d.price_sqft !== null).map(d => d.price_sqft);
     const avgSqft = mean(sqftVals);
-    setStatWithDelta('kpiSqft', 'kpiSqftSub', avgSqft, prevSqftVals, (v) => `$${v.toFixed(2)}`, false);
+    setStatWithDelta('kpiSqft', 'kpiSqftSub', avgSqft,
+        comparison ? comparison.prevRows.filter(d => d.price_sqft !== null).map(d => d.price_sqft) : null,
+        comparison ? comparison.curRows.filter(d => d.price_sqft !== null).map(d => d.price_sqft) : null,
+        comparison ? comparison.label : null,
+        (v) => `$${v.toFixed(2)}`);
 
     // Avg Days on Market
-    const domVals = latest.filter(d => d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '' && !isNaN(d.daysOnMarket)).map(d => Number(d.daysOnMarket));
-    const prevDomVals = prev.filter(d => d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '' && !isNaN(d.daysOnMarket)).map(d => Number(d.daysOnMarket));
+    const domFilter = d => d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '' && !isNaN(d.daysOnMarket);
+    const domVals = filtered.filter(domFilter).map(d => Number(d.daysOnMarket));
     if (domVals.length > 0) {
         const avgDom = mean(domVals);
-        setStatWithDelta('kpiDom', 'kpiDomSub', avgDom, prevDomVals, (v) => `${Math.round(v)} days`, true);
+        setStatWithDelta('kpiDom', 'kpiDomSub', avgDom,
+            comparison ? comparison.prevRows.filter(domFilter).map(d => Number(d.daysOnMarket)) : null,
+            comparison ? comparison.curRows.filter(domFilter).map(d => Number(d.daysOnMarket)) : null,
+            comparison ? comparison.label : null,
+            (v) => `${Math.round(v)} days`);
     } else {
         document.getElementById('kpiDom').textContent = '\u2014';
         document.getElementById('kpiDomSub').textContent = 'Not available for this selection';
@@ -680,11 +716,11 @@ function updateKPIs() {
     }
 
     // New Construction Share
-    const typedVals = latest.filter(d => d.listingType);
+    const typedVals = filtered.filter(d => d.listingType);
     if (typedVals.length > 0) {
         const pct = (typedVals.filter(d => d.listingType === 'New Construction').length / typedVals.length) * 100;
         document.getElementById('kpiNewConst').textContent = `${pct.toFixed(1)}%`;
-        document.getElementById('kpiNewConstSub').textContent = `As of ${latestDate}`;
+        document.getElementById('kpiNewConstSub').textContent = `Across ${dates.length} weekly pull${dates.length === 1 ? '' : 's'}`;
         document.getElementById('kpiNewConstSub').className = 'sub neutral';
     } else {
         document.getElementById('kpiNewConst').textContent = '\u2014';
@@ -693,8 +729,7 @@ function updateKPIs() {
     }
 }
 
-// higherIsBad: true means an increase should be styled as "up/red" being unfavorable framing reversed (e.g. days on market rising is bad -> red already default). We keep rent/sqft rising = red (cost increase), dom rising = red (slower market), consistent "red = higher number" semantics throughout.
-function setStatWithDelta(valueId, subId, value, prevArr, formatFn, isDom) {
+function setStatWithDelta(valueId, subId, value, prevRowsVals, curRowsVals, label, formatFn) {
     const valueEl = document.getElementById(valueId);
     const subEl = document.getElementById(subId);
     if (value === null) {
@@ -704,12 +739,19 @@ function setStatWithDelta(valueId, subId, value, prevArr, formatFn, isDom) {
         return;
     }
     valueEl.textContent = formatFn(value);
-    const prevMean = mean(prevArr);
-    if (prevMean !== null && prevMean !== 0) {
-        const pctChange = ((value - prevMean) / prevMean) * 100;
+
+    if (!prevRowsVals || !curRowsVals) {
+        subEl.textContent = 'No prior pull to compare';
+        subEl.className = 'sub neutral';
+        return;
+    }
+    const prevMean = mean(prevRowsVals);
+    const curMean = mean(curRowsVals);
+    if (prevMean !== null && prevMean !== 0 && curMean !== null) {
+        const pctChange = ((curMean - prevMean) / prevMean) * 100;
         const arrow = pctChange >= 0 ? '\u25B2' : '\u25BC';
         const cls = pctChange >= 0 ? 'up' : 'down';
-        subEl.innerHTML = `${arrow} ${Math.abs(pctChange).toFixed(1)}% vs prior pull`;
+        subEl.innerHTML = `${arrow} ${Math.abs(pctChange).toFixed(1)}% ${label}`;
         subEl.className = `sub ${cls}`;
     } else {
         subEl.textContent = 'No prior pull to compare';
@@ -827,13 +869,14 @@ function updateMap() {
     if (visible.length === 0) return;
 
     const dates = [...new Set(visible.map(d => d.date))].sort();
-    const latestDate = dates[dates.length - 1];
-    const latestData = visible.filter(d => d.date === latestDate && d.latitude && d.longitude);
+    // Use every row across the ENTIRE selected window (not just the latest date) so
+    // both slider handles affect what's plotted, not just the right-hand one.
+    const windowData = visible.filter(d => d.latitude && d.longitude);
 
     const metricGetter = d => metric === 'monthly' ? d.price : d.price_sqft;
 
     if (mapMode === 'points') {
-        latestData.forEach(d => {
+        windowData.forEach(d => {
             const val = metricGetter(d);
             if (val === null || val === undefined) return;
             const radius = metric === 'monthly' ? Math.min(Math.max(val / 300, 3), 12) : Math.min(Math.max(val * 4, 3), 12);
@@ -848,6 +891,7 @@ function updateMap() {
 
             const popupContent = `
                 <b>${d.formattedAddress || 'Address Unknown'}</b><br>
+                Capture Date: ${d.date}<br>
                 Zip: ${d.zipCode}<br>
                 Beds: ${d.bedrooms} | Baths: ${d.bathrooms}<br>
                 SqFt: ${d.squareFootage || 'N/A'}<br>
@@ -861,7 +905,7 @@ function updateMap() {
             }).bindPopup(popupContent).addTo(mapMarkers);
         });
     } else {
-        const bins = computeHexBins(latestData, metricGetter);
+        const bins = computeHexBins(windowData, metricGetter);
         const maxCount = Math.max(...bins.map(b => b.count), 1);
         bins.forEach(b => {
             const [cx, cy] = axialToPixel(b.q, b.r, HEX_SIZE_M);
@@ -898,6 +942,7 @@ function updateMap() {
             html += '<hr style="margin:8px 0 5px 0;border-top:1.5px solid #111;">';
             html += '<span style="font-size:0.78rem;">Darker hex = more listings</span>';
         }
+        html += `<div class="mono" style="font-size:0.7rem;color:#55524a;margin-top:6px;">${dates.length} weekly pull${dates.length === 1 ? '' : 's'} shown</div>`;
         div.innerHTML = html;
         return div;
     };
