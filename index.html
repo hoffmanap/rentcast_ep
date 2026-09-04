@@ -157,7 +157,7 @@
 
   /* ---- Stat row (KPIs) ---- */
   .stat-row {
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px;
     padding: 1rem 1.8rem; background: var(--paper); flex-shrink: 0;
   }
   .stat-box {
@@ -169,6 +169,7 @@
   .stat-box:nth-child(3) { background: var(--salmon); }
   .stat-box:nth-child(4) { background: var(--lavender); }
   .stat-box:nth-child(5) { background: #f0e3ff; }
+  .stat-box:nth-child(6) { background: #ffd8e8; }
   .stat-box .lbl {
     font-size: 0.66rem; color: var(--ink); font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.03em; opacity: 0.7; margin-bottom: 4px;
@@ -189,6 +190,35 @@
   .map-toggle {
     position: absolute; top: 14px; left: 50px; z-index: 999;
   }
+  .lasso-controls {
+    position: absolute; top: 58px; left: 50px; z-index: 999;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .icon-btn {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.02em; color: var(--ink);
+    background: var(--card); border: 2.5px solid var(--ink); border-radius: 50px;
+    padding: 7px 15px; cursor: pointer; box-shadow: 3px 3px 0 var(--ink);
+  }
+  .icon-btn:hover { background: var(--paper-deep); }
+  .icon-btn.active { background: var(--accent); color: white; }
+  .lasso-panel {
+    position: absolute; bottom: 14px; left: 14px; z-index: 999; max-width: 220px;
+    background: var(--card); border: 2.5px solid var(--ink); border-radius: 10px;
+    padding: 0.85rem 1rem; box-shadow: 5px 5px 0 var(--ink);
+  }
+  .lasso-panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: 700; font-size: 0.82rem; text-transform: uppercase;
+    letter-spacing: 0.02em; margin-bottom: 8px;
+  }
+  .lasso-panel-header button {
+    background: none; border: none; font-size: 1.1rem; font-weight: 700; cursor: pointer; line-height: 1;
+  }
+  .lasso-stat { display: flex; justify-content: space-between; gap: 12px; font-size: 0.8rem; margin-bottom: 5px; }
+  .lasso-stat span { color: var(--muted); }
+  .lasso-stat strong { font-family: 'JetBrains Mono', monospace; text-align: right; }
+  #map.lasso-active { cursor: crosshair; }
   .charts-container {
     width: 44%; padding: 1.2rem; overflow-y: auto;
     display: flex; flex-direction: column; gap: 1.1rem; background: var(--paper);
@@ -299,6 +329,11 @@
     </div>
     <div class="range-readout" id="rangeReadout">Loading date range&hellip;</div>
   </div>
+
+  <div class="toolbar-group">
+    <span class="control-label">Export</span>
+    <button class="icon-btn" id="exportCsvBtn" title="Download the current selection as a CSV file">&#8681; Export CSV</button>
+  </div>
 </div>
 
 <div class="stat-row" id="kpiRow">
@@ -327,6 +362,11 @@
     <div class="num" id="kpiNewConst">&ndash;</div>
     <div class="sub neutral" id="kpiNewConstSub">&nbsp;</div>
   </div>
+  <div class="stat-box">
+    <div class="lbl">Price Cut Activity</div>
+    <div class="num" id="kpiCuts">&ndash;</div>
+    <div class="sub neutral" id="kpiCutsSub">&nbsp;</div>
+  </div>
 </div>
 
 <div class="dashboard">
@@ -336,6 +376,17 @@
     <div class="map-toggle pill-group" id="mapModeGroup">
       <button data-value="points" class="active">Points</button>
       <button data-value="hexbin">Hexbin</button>
+    </div>
+    <div class="lasso-controls">
+      <button class="icon-btn" id="lassoToggleBtn" title="Draw a shape on the map to analyze listings inside it">&#9998; Lasso Select</button>
+      <button class="icon-btn" id="lassoResetBtn" title="Clear the lasso selection">&#8635; Reset</button>
+    </div>
+    <div id="lassoPanel" class="lasso-panel hidden">
+      <div class="lasso-panel-header">
+        <span>Lasso Selection</span>
+        <button id="lassoPanelClose" title="Hide panel">&times;</button>
+      </div>
+      <div id="lassoStats"></div>
     </div>
     <div id="map"></div>
   </div>
@@ -371,6 +422,14 @@
         <canvas id="inventoryChart"></canvas>
       </div>
     </div>
+
+    <div class="chart-card">
+      <h3>Price Cut Activity by Bedroom (%)</h3>
+      <div class="field-note">Share of listings whose price dropped vs. the prior period shown, by bedroom count.</div>
+      <div class="chart-wrapper">
+        <canvas id="cutChart"></canvas>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -383,6 +442,7 @@ let cleanData = [];       // full parsed dataset (type-filter applied), independ
 let bedChartInstance = null;
 let zipChartInstance = null;
 let inventoryChartInstance = null;
+let cutChartInstance = null;
 let mapInstance = null;
 let mapMarkers = L.layerGroup();
 let mapLegend = null;
@@ -402,6 +462,13 @@ let metric = 'monthly';    // 'monthly' | 'sqft'
 let bedFilter = 'all';     // 'all' | '1' | '2' | '3' | '4+'
 let aggLevel = 'week';     // 'week' | 'month' | 'quarter' | 'year'
 let mapMode = 'points';    // 'points' | 'hexbin'
+
+let lassoActive = false;
+let lassoDrawing = false;
+let lassoPoints = [];
+let lassoDrawLayer = null;
+let lassoResultLayer = null;
+let lassoPolygonLatLngs = null; // array of [lat, lon] once a shape is closed
 
 const EL_PASO_COORDS = [31.7619, -106.4850];
 const PROJ_LAT0 = 31.85, PROJ_LON0 = -106.44;
@@ -446,13 +513,19 @@ function refreshAll() {
     updateMap();
     updateCharts();
     updateKPIs();
+    computeLassoStats(); // keep the lasso panel live as other filters change
 }
 
 function wireControls() {
     wirePillGroup('metricToggleGroup', (val) => { metric = val; refreshAll(); });
-    wirePillGroup('bedFilterGroup', (val) => { bedFilter = val; updateKPIs(); });
+    wirePillGroup('bedFilterGroup', (val) => { bedFilter = val; updateKPIs(); computeLassoStats(); });
     wirePillGroup('aggGroup', (val) => { aggLevel = val; updateCharts(); });
     wirePillGroup('mapModeGroup', (val) => { mapMode = val; updateMap(); });
+
+    document.getElementById('lassoToggleBtn').addEventListener('click', () => setLassoActive(!lassoActive));
+    document.getElementById('lassoResetBtn').addEventListener('click', resetLasso);
+    document.getElementById('lassoPanelClose').addEventListener('click', () => document.getElementById('lassoPanel').classList.add('hidden'));
+    document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
 
     const rangeStart = document.getElementById('rangeStart');
     const rangeEnd = document.getElementById('rangeEnd');
@@ -557,6 +630,80 @@ function mean(arr) {
     return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
+function median(arr) {
+    if (!arr || arr.length === 0) return null;
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
+}
+
+// ============================================================
+// Price cut tracking
+// ============================================================
+// Groups rows by listing id (a stable per-unit slug from RentCast) and looks at
+// how price moved across the weekly pulls present in `rows`. A listing only
+// counts as "tracked" if it was observed in 2+ of those pulls -- a single
+// observation can't reveal a cut. "Cut" = price ever fell below its first
+// observed price within the given rows.
+function computePriceCutsForRows(rows) {
+    const byId = {};
+    rows.forEach(d => {
+        if (!d.id) return;
+        (byId[d.id] = byId[d.id] || []).push(d);
+    });
+
+    const results = [];
+    Object.values(byId).forEach(arr => {
+        if (arr.length < 2) return;
+        arr.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+        const firstPrice = arr[0].price;
+        const minPrice = Math.min(...arr.map(d => d.price));
+        const cut = firstPrice - minPrice;
+        results.push({
+            id: arr[0].id,
+            zip: arr[0].zipCode,
+            bedGroup: arr[0].bedGroup,
+            firstPrice, minPrice,
+            cut, hadCut: cut > 0,
+            weeks: arr.length,
+            firstDate: arr[0].date
+        });
+    });
+    return results;
+}
+
+// Period-over-period cut series for the trend chart: for each period (per the
+// current aggregation level), what share of listings present in both that
+// period and the prior one saw their price drop? Works at any granularity,
+// including "week", since it always compares to the *previous* bucket rather
+// than looking for repeats inside a single bucket.
+function computePeriodCutSeries(rows, level) {
+    const periods = [...new Set(rows.map(d => getPeriodKey(d.date, level)))].sort();
+    const idPeriodPrice = {};
+    rows.forEach(d => {
+        if (!d.id) return;
+        const p = getPeriodKey(d.date, level);
+        if (!idPeriodPrice[d.id]) idPeriodPrice[d.id] = {};
+        const existing = idPeriodPrice[d.id][p];
+        if (!existing || d.date > existing.date) idPeriodPrice[d.id][p] = { price: d.price, date: d.date };
+    });
+
+    const pctCutPerPeriod = periods.map((p, idx) => {
+        if (idx === 0) return null;
+        const prevP = periods[idx - 1];
+        let tracked = 0, cutCount = 0;
+        Object.values(idPeriodPrice).forEach(pm => {
+            if (pm[p] && pm[prevP]) {
+                tracked++;
+                if (pm[p].price < pm[prevP].price) cutCount++;
+            }
+        });
+        return tracked > 0 ? (cutCount / tracked) * 100 : null;
+    });
+
+    return { periods, pctCutPerPeriod };
+}
+
 // ============================================================
 // Property type filter
 // ============================================================
@@ -637,7 +784,7 @@ function setupZipSelector() {
 // ============================================================
 function updateKPIs() {
     const visible = getVisibleData();
-    const ids = ['kpiListings','kpiRent','kpiSqft','kpiDom','kpiNewConst'];
+    const ids = ['kpiListings','kpiRent','kpiSqft','kpiDom','kpiNewConst','kpiCuts'];
     if (visible.length === 0) {
         ids.forEach(id => document.getElementById(id).textContent = '\u2013');
         return;
@@ -726,6 +873,25 @@ function updateKPIs() {
         document.getElementById('kpiNewConst').textContent = '\u2014';
         document.getElementById('kpiNewConstSub').textContent = 'Not available for this selection';
         document.getElementById('kpiNewConstSub').className = 'sub neutral';
+    }
+
+    // Price Cut Activity — only listings observed 2+ times in the window can show a cut
+    const cutData = computePriceCutsForRows(filtered);
+    if (cutData.length > 0) {
+        const withCut = cutData.filter(c => c.hadCut);
+        const pct = (withCut.length / cutData.length) * 100;
+        document.getElementById('kpiCuts').textContent = `${pct.toFixed(1)}%`;
+        if (withCut.length > 0) {
+            const med = median(withCut.map(c => c.cut));
+            document.getElementById('kpiCutsSub').textContent = `Median cut $${Math.round(med)} \u00b7 ${cutData.length} tracked`;
+        } else {
+            document.getElementById('kpiCutsSub').textContent = `No cuts among ${cutData.length} tracked`;
+        }
+        document.getElementById('kpiCutsSub').className = 'sub neutral';
+    } else {
+        document.getElementById('kpiCuts').textContent = '\u2014';
+        document.getElementById('kpiCutsSub').textContent = 'Select 2+ weeks to track';
+        document.getElementById('kpiCutsSub').className = 'sub neutral';
     }
 }
 
@@ -855,12 +1021,19 @@ function colorForValue(val, m) {
 // ============================================================
 function initMap() {
     mapInstance = L.map('map', { zoomControl: true }).setView(EL_PASO_COORDS, 11);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 19
+    // Esri's World Light Gray Canvas: free, no API key required, similar light
+    // cartographic style to the CARTO basemap this replaces (CARTO now requires
+    // an account/API key and watermarks unauthenticated tile requests).
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ | &copy; OpenStreetMap contributors',
+        maxZoom: 16
+    }).addTo(mapInstance);
+    // Esri's reference layer adds labels/roads on top of the gray canvas
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 16
     }).addTo(mapInstance);
     mapMarkers.addTo(mapInstance);
+    initLasso();
 }
 
 function updateMap() {
@@ -875,6 +1048,10 @@ function updateMap() {
 
     const metricGetter = d => metric === 'monthly' ? d.price : d.price_sqft;
 
+    // Precompute cut info once per window so every marker's popup can reference it
+    const cutById = {};
+    computePriceCutsForRows(windowData).forEach(c => { cutById[c.id] = c; });
+
     if (mapMode === 'points') {
         windowData.forEach(d => {
             const val = metricGetter(d);
@@ -888,6 +1065,13 @@ function updateMap() {
             if (d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '') extraLines += `Days on Market: ${d.daysOnMarket}<br>`;
             if (d.status) extraLines += `Status: ${d.status}<br>`;
             if (d.hoa_fee) extraLines += `HOA: $${d.hoa_fee}/mo<br>`;
+
+            const cutInfo = cutById[d.id];
+            if (cutInfo && cutInfo.hadCut) {
+                extraLines += `<span style="color:#b3271e;font-weight:700;">&#8595; Cut $${cutInfo.cut} since ${cutInfo.firstDate}</span><br>`;
+            } else if (cutInfo && cutInfo.weeks >= 2) {
+                extraLines += `<span style="color:#55524a;">No price change across ${cutInfo.weeks} pulls</span><br>`;
+            }
 
             const popupContent = `
                 <b>${d.formattedAddress || 'Address Unknown'}</b><br>
@@ -947,6 +1131,165 @@ function updateMap() {
         return div;
     };
     mapLegend.addTo(mapInstance);
+}
+
+// ============================================================
+// Lasso tool: freehand draw -> point-in-polygon -> live stats panel
+// ============================================================
+function initLasso() {
+    mapInstance.on('mousedown', onLassoMouseDown);
+    mapInstance.on('mousemove', onLassoMouseMove);
+    mapInstance.on('mouseup', onLassoMouseUp);
+}
+
+function setLassoActive(active) {
+    lassoActive = active;
+    document.getElementById('lassoToggleBtn').classList.toggle('active', active);
+    const mapEl = document.getElementById('map');
+    if (active) {
+        mapInstance.dragging.disable();
+        mapEl.classList.add('lasso-active');
+    } else {
+        mapInstance.dragging.enable();
+        mapEl.classList.remove('lasso-active');
+    }
+}
+
+function onLassoMouseDown(e) {
+    if (!lassoActive) return;
+    lassoDrawing = true;
+    lassoPoints = [e.latlng];
+    if (lassoDrawLayer) { mapInstance.removeLayer(lassoDrawLayer); lassoDrawLayer = null; }
+    if (lassoResultLayer) { mapInstance.removeLayer(lassoResultLayer); lassoResultLayer = null; }
+    lassoDrawLayer = L.polyline(lassoPoints, { color: '#4361ee', weight: 3, dashArray: '6,4' }).addTo(mapInstance);
+}
+
+function onLassoMouseMove(e) {
+    if (!lassoActive || !lassoDrawing) return;
+    lassoPoints.push(e.latlng);
+    lassoDrawLayer.setLatLngs(lassoPoints);
+}
+
+function onLassoMouseUp() {
+    if (!lassoActive || !lassoDrawing) return;
+    lassoDrawing = false;
+
+    if (lassoPoints.length < 3) {
+        if (lassoDrawLayer) { mapInstance.removeLayer(lassoDrawLayer); lassoDrawLayer = null; }
+        lassoPoints = [];
+        return;
+    }
+
+    lassoPolygonLatLngs = lassoPoints.map(p => [p.lat, p.lng]);
+    if (lassoDrawLayer) { mapInstance.removeLayer(lassoDrawLayer); lassoDrawLayer = null; }
+    lassoResultLayer = L.polygon(lassoPolygonLatLngs, {
+        color: '#111111', weight: 2.5, fillColor: '#4361ee', fillOpacity: 0.12, dashArray: '4,3'
+    }).addTo(mapInstance);
+
+    setLassoActive(false); // exit draw mode automatically; shape + stats stay until Reset
+    computeLassoStats();
+}
+
+function resetLasso() {
+    lassoPolygonLatLngs = null;
+    lassoPoints = [];
+    if (lassoResultLayer) { mapInstance.removeLayer(lassoResultLayer); lassoResultLayer = null; }
+    if (lassoDrawLayer) { mapInstance.removeLayer(lassoDrawLayer); lassoDrawLayer = null; }
+    setLassoActive(false);
+    document.getElementById('lassoPanel').classList.add('hidden');
+}
+
+// Standard ray-casting point-in-polygon test (fine at city scale)
+function pointInPolygon(lat, lon, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const yi = poly[i][0], xi = poly[i][1];
+        const yj = poly[j][0], xj = poly[j][1];
+        const intersect = ((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+function getLassoSubset() {
+    if (!lassoPolygonLatLngs) return null;
+    const visible = getVisibleData().filter(d => d.latitude && d.longitude);
+    return visible.filter(d => pointInPolygon(Number(d.latitude), Number(d.longitude), lassoPolygonLatLngs));
+}
+
+function computeLassoStats() {
+    const panel = document.getElementById('lassoPanel');
+    if (!lassoPolygonLatLngs) { panel.classList.add('hidden'); return; }
+
+    const inside = getLassoSubset();
+    panel.classList.remove('hidden');
+
+    if (inside.length === 0) {
+        document.getElementById('lassoStats').innerHTML = '<div class="field-note">No listings fall inside this shape for the current filters/time window.</div>';
+        return;
+    }
+
+    const avgRent = mean(inside.map(d => d.price));
+    const sqftVals = inside.filter(d => d.price_sqft !== null).map(d => d.price_sqft);
+    const avgSqft = mean(sqftVals);
+    const domVals = inside.filter(d => d.daysOnMarket !== null && d.daysOnMarket !== undefined && d.daysOnMarket !== '' && !isNaN(d.daysOnMarket)).map(d => Number(d.daysOnMarket));
+
+    const zipCounts = {};
+    inside.forEach(d => { if (d.zipCode) zipCounts[d.zipCode] = (zipCounts[d.zipCode] || 0) + 1; });
+    const topZips = Object.entries(zipCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([z, c]) => `${z} (${c})`).join(', ');
+
+    const cutData = computePriceCutsForRows(inside);
+    let cutLine = '\u2014';
+    if (cutData.length > 0) {
+        const withCut = cutData.filter(c => c.hadCut);
+        cutLine = `${((withCut.length / cutData.length) * 100).toFixed(0)}% of ${cutData.length} tracked`;
+    }
+
+    document.getElementById('lassoStats').innerHTML = `
+        <div class="lasso-stat"><span>Listings</span><strong>${inside.length.toLocaleString()}</strong></div>
+        <div class="lasso-stat"><span>Avg Rent</span><strong>$${Math.round(avgRent).toLocaleString()}</strong></div>
+        <div class="lasso-stat"><span>Avg $/SqFt</span><strong>${avgSqft !== null ? '$' + avgSqft.toFixed(2) : '\u2014'}</strong></div>
+        <div class="lasso-stat"><span>Avg Days on Mkt</span><strong>${domVals.length ? Math.round(mean(domVals)) + ' days' : '\u2014'}</strong></div>
+        <div class="lasso-stat"><span>Price Cuts</span><strong style="font-size:0.72rem;">${cutLine}</strong></div>
+        <div class="lasso-stat"><span>Top Zips</span><strong style="font-size:0.72rem;">${topZips || '\u2014'}</strong></div>
+    `;
+}
+
+// ============================================================
+// CSV export (lasso selection if drawn, otherwise the current filtered view)
+// ============================================================
+function exportCSV() {
+    const lassoSubset = getLassoSubset();
+    const rows = lassoSubset !== null ? lassoSubset : getVisibleData();
+    const label = lassoSubset !== null ? 'lasso_selection' : 'filtered_view';
+
+    if (rows.length === 0) {
+        alert('No data to export for the current selection.');
+        return;
+    }
+
+    const cols = ['date', 'formattedAddress', 'zipCode', 'price', 'bedrooms', 'bathrooms', 'squareFootage', 'price_sqft', 'propertyType', 'yearBuilt', 'daysOnMarket', 'status', 'listingType', 'hoa_fee', 'latitude', 'longitude'];
+    const csvLines = [cols.join(',')];
+    rows.forEach(d => {
+        const line = cols.map(c => {
+            let v = d[c];
+            if (v === null || v === undefined) v = '';
+            v = String(v).replace(/"/g, '""');
+            if (v.includes(',') || v.includes('"') || v.includes('\n')) v = `"${v}"`;
+            return v;
+        }).join(',');
+        csvLines.push(line);
+    });
+
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `el_paso_rentals_${label}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 // ============================================================
@@ -1019,6 +1362,21 @@ function updateCharts() {
         return { label: `${bg} Bedroom${bg === '1' ? '' : 's'}`, data: dataPoints, backgroundColor: colors[idx] + 'CC' };
     });
 
+    // Price cut activity: for each bedroom group, % of listings whose price fell vs. the prior period
+    const cutDatasets = bedGroups.map((bg, idx) => {
+        const bgRows = visible.filter(d => d.bedGroup === bg);
+        const { periods: cutPeriods, pctCutPerPeriod } = computePeriodCutSeries(bgRows, aggLevel);
+        // realign to the shared `periods` axis (a bedroom group might be missing an early period)
+        const dataPoints = periods.map(p => {
+            const idx2 = cutPeriods.indexOf(p);
+            return idx2 >= 0 ? pctCutPerPeriod[idx2] : null;
+        });
+        return {
+            label: `${bg} Bedroom${bg === '1' ? '' : 's'}`, data: dataPoints,
+            borderColor: colors[idx], backgroundColor: colors[idx], fill: false, tension: 0.15, spanGaps: true
+        };
+    });
+
     // Zip trend chart
     const activeZips = Array.from(selectedZips);
     const zipDatasets = activeZips.map((zip, idx) => {
@@ -1076,6 +1434,23 @@ function updateCharts() {
             scales: {
                 x: { stacked: true, title: { display: true, text: aggLabel(), font: commonFont }, grid: { color: gridColor } },
                 y: { stacked: true, min: 0, max: 100, title: { display: true, text: 'Percentage of Market (%)', font: commonFont }, ticks: { callback: (v) => v + '%' }, grid: { color: gridColor } }
+            }
+        }
+    });
+
+    if (cutChartInstance) cutChartInstance.destroy();
+    cutChartInstance = new Chart(document.getElementById('cutChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: periods, datasets: cutDatasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { font: commonFont } },
+                tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + '%' : 'n/a') } }
+            },
+            scales: {
+                x: { title: { display: true, text: aggLabel(), font: commonFont }, grid: { color: gridColor } },
+                y: { min: 0, title: { display: true, text: '% of Listings with a Price Cut', font: commonFont }, ticks: { callback: (v) => v + '%' }, grid: { color: gridColor } }
             }
         }
     });
