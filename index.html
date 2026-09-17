@@ -393,6 +393,12 @@
 
   <div class="charts-container">
     <div class="chart-card">
+      <h3>Filter by Zip Code</h3>
+      <div id="zip-checkboxes" class="zip-selector"></div>
+      <div class="field-note">Uncheck zips to filter the whole dashboard &mdash; banner stats, map, and every chart below &mdash; down to just the checked zips. Also sets which zips plot on the trend chart below.</div>
+    </div>
+
+    <div class="chart-card">
       <h3>Filter by Property Type</h3>
       <div id="type-checkboxes" class="type-selector"></div>
       <div class="field-note" id="typeFilterNote"></div>
@@ -407,10 +413,7 @@
 
     <div class="chart-card">
       <h3>Rent Trends by Zip Code</h3>
-      <div class="zip-selector-container">
-        <div class="selector-label">Select zip codes to compare:</div>
-        <div id="zip-checkboxes" class="zip-selector"></div>
-      </div>
+      <div class="field-note" id="zipChartNote">Showing top zips by listing volume within your current filters.</div>
       <div class="chart-wrapper">
         <canvas id="zipChart"></canvas>
       </div>
@@ -518,7 +521,7 @@ function refreshAll() {
 
 function wireControls() {
     wirePillGroup('metricToggleGroup', (val) => { metric = val; refreshAll(); });
-    wirePillGroup('bedFilterGroup', (val) => { bedFilter = val; updateKPIs(); computeLassoStats(); });
+    wirePillGroup('bedFilterGroup', (val) => { bedFilter = val; updateMap(); updateKPIs(); computeLassoStats(); });
     wirePillGroup('aggGroup', (val) => { aggLevel = val; updateCharts(); });
     wirePillGroup('mapModeGroup', (val) => { mapMode = val; updateMap(); });
 
@@ -616,13 +619,28 @@ function processData() {
                                         // regardless of the Rent vs $/SqFt toggle.
 }
 
-// Type-filtered + date-range-filtered working set, used by map/charts/KPIs
+// Type-filtered + date-range-filtered + geography-filtered working set.
+// This is the single source of truth for the KPI banner, the map, and every
+// chart -- so a change to property type, zip selection, the lasso shape, or
+// the time window updates everything downstream automatically.
 function getVisibleData() {
     const [startDate, endDate] = getSelectedDateRange();
-    return cleanData.filter(d =>
-        (selectedTypes.size === 0 || selectedTypes.has(d.typeKey)) &&
-        d.date >= startDate && d.date <= endDate
-    );
+    return cleanData.filter(d => {
+        if (!selectedTypes.has(d.typeKey)) return false;
+        if (d.date < startDate || d.date > endDate) return false;
+        // Zip filter: only applied once the selector has loaded AND the user has
+        // actually excluded at least one zip (default is "all checked" = no filter)
+        if (allZips.length > 0 && selectedZips.size < allZips.length) {
+            if (!selectedZips.has(String(d.zipCode))) return false;
+        }
+        // Lasso, if drawn, is an ADDITIONAL geographic constraint on top of any
+        // zip filter (both apply together rather than one overriding the other)
+        if (lassoPolygonLatLngs) {
+            if (!d.latitude || !d.longitude) return false;
+            if (!pointInPolygon(Number(d.latitude), Number(d.longitude), lassoPolygonLatLngs)) return false;
+        }
+        return true;
+    });
 }
 
 function mean(arr) {
@@ -751,14 +769,19 @@ function setupTypeSelector() {
 // ============================================================
 // Zip selector
 // ============================================================
+let zipCounts = {}; // populated in setupZipSelector, reused to rank zips for the trend chart
+
 function setupZipSelector() {
-    const zipCounts = {};
+    zipCounts = {};
     cleanData.forEach(d => {
         if (d.zipCode) zipCounts[d.zipCode] = (zipCounts[d.zipCode] || 0) + 1;
     });
 
     allZips = Object.keys(zipCounts).sort((a, b) => zipCounts[b] - zipCounts[a]);
-    allZips.slice(0, 5).forEach(z => selectedZips.add(z));
+    // Default: every zip selected, i.e. no geographic filter applied yet -- mirrors
+    // the property type filter's default. Uncheck zips here to filter the ENTIRE
+    // dashboard (KPI banner, map, and every chart) down to just the checked zips.
+    allZips.forEach(z => selectedZips.add(z));
 
     const zipContainer = document.getElementById('zip-checkboxes');
     zipContainer.innerHTML = '';
@@ -771,10 +794,10 @@ function setupZipSelector() {
         cb.checked = selectedZips.has(zip);
         cb.onchange = (e) => {
             if (e.target.checked) selectedZips.add(zip); else selectedZips.delete(zip);
-            updateCharts();
+            refreshAll();
         };
         label.appendChild(cb);
-        label.appendChild(document.createTextNode(` ${zip}`));
+        label.appendChild(document.createTextNode(` ${zip} (${zipCounts[zip]})`));
         zipContainer.appendChild(label);
     });
 }
@@ -1044,7 +1067,9 @@ function updateMap() {
     const dates = [...new Set(visible.map(d => d.date))].sort();
     // Use every row across the ENTIRE selected window (not just the latest date) so
     // both slider handles affect what's plotted, not just the right-hand one.
-    const windowData = visible.filter(d => d.latitude && d.longitude);
+    // Also respects the Bedroom Type toggle, same as the KPI banner.
+    const bedFn = d => bedFilter === 'all' || d.bedGroup === bedFilter;
+    const windowData = visible.filter(d => d.latitude && d.longitude && bedFn(d));
 
     const metricGetter = d => metric === 'monthly' ? d.price : d.price_sqft;
 
@@ -1187,7 +1212,7 @@ function onLassoMouseUp() {
     }).addTo(mapInstance);
 
     setLassoActive(false); // exit draw mode automatically; shape + stats stay until Reset
-    computeLassoStats();
+    refreshAll(); // lasso is now a real geographic filter -- update KPI banner, map, and every chart
 }
 
 function resetLasso() {
@@ -1197,6 +1222,7 @@ function resetLasso() {
     if (lassoDrawLayer) { mapInstance.removeLayer(lassoDrawLayer); lassoDrawLayer = null; }
     setLassoActive(false);
     document.getElementById('lassoPanel').classList.add('hidden');
+    refreshAll(); // clear the geographic filter everywhere, not just the side panel
 }
 
 // Standard ray-casting point-in-polygon test (fine at city scale)
@@ -1330,11 +1356,13 @@ function updateCharts() {
 
     const periods = [...new Set(visible.map(d => getPeriodKey(d.date, aggLevel)))].sort();
 
-    // Citywide average
+    // Average line -- labeled honestly depending on whether a geographic filter is active
+    const geoFiltered = (allZips.length > 0 && selectedZips.size < allZips.length) || !!lassoPolygonLatLngs;
+    const avgLabel = geoFiltered ? 'Selected Area Average' : 'Citywide Average';
     const citywideGroups = seriesByPeriod(visible, aggLevel, metricFn);
     const citywideData = periods.map(p => citywideGroups[p] ? mean(citywideGroups[p]) : null);
     const citywideDataset = {
-        label: 'Citywide Average', data: citywideData,
+        label: avgLabel, data: citywideData,
         borderColor: '#55524a', backgroundColor: '#55524a',
         borderDash: [5, 5], borderWidth: 2, pointRadius: 3, fill: false, tension: 0.15, order: -1
     };
@@ -1377,8 +1405,24 @@ function updateCharts() {
         };
     });
 
-    // Zip trend chart
-    const activeZips = Array.from(selectedZips);
+    // Zip trend chart -- cap to a legible number of lines, ranked by volume
+    // within the CURRENT filters (not the raw dataset), so the busiest zips
+    // among whatever's actually selected/visible get shown first.
+    const ZIP_LINE_CAP = 8;
+    const volumeInVisible = {};
+    visible.forEach(d => { if (d.zipCode) volumeInVisible[d.zipCode] = (volumeInVisible[d.zipCode] || 0) + 1; });
+    const activeZips = Array.from(selectedZips)
+        .filter(z => volumeInVisible[z])
+        .sort((a, b) => volumeInVisible[b] - volumeInVisible[a])
+        .slice(0, ZIP_LINE_CAP);
+
+    const zipNote = document.getElementById('zipChartNote');
+    if (zipNote) {
+        zipNote.textContent = selectedZips.size > ZIP_LINE_CAP
+            ? `Showing top ${activeZips.length} of ${selectedZips.size} selected zips by listing volume (within current filters).`
+            : `Showing all ${activeZips.length} selected zip${activeZips.length === 1 ? '' : 's'} with data in the current filters.`;
+    }
+
     const zipDatasets = activeZips.map((zip, idx) => {
         const color = colors[idx % colors.length];
         const rows = visible.filter(d => String(d.zipCode) === String(zip));
