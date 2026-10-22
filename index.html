@@ -187,13 +187,15 @@
   .dashboard { display: flex; flex: 1; overflow: hidden; }
   .map-container { flex: 1; position: relative; border-right: 3px solid var(--ink); }
   #map { width: 100%; height: 100%; background: #e5e5e5; }
-  .map-toggle {
-    position: absolute; top: 14px; left: 50px; z-index: 999;
+  /* Stacked map controls: [Points|Hexbin] [Price|Price + listings] on row 1, lasso on row 2 */
+  .map-controls {
+    position: absolute; top: 14px; left: 50px; right: 14px; z-index: 999;
+    display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+    pointer-events: none; /* let drags pass through the empty space around the buttons */
   }
-  .lasso-controls {
-    position: absolute; top: 58px; left: 50px; z-index: 999;
-    display: flex; gap: 8px; align-items: center;
-  }
+  .map-controls > * { pointer-events: auto; }
+  .map-controls-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .lasso-controls { display: flex; gap: 8px; align-items: center; }
   .icon-btn {
     font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.78rem;
     text-transform: uppercase; letter-spacing: 0.02em; color: var(--ink);
@@ -254,12 +256,20 @@
   .info.legend {
     background: var(--card); padding: 10px 14px; border-radius: 8px;
     border: 2.5px solid var(--ink); box-shadow: 4px 4px 0 var(--ink);
-    line-height: 1.6; font-size: 0.82rem; color: var(--ink);
+    line-height: 1.35; font-size: 0.78rem; color: var(--ink); min-width: 150px;
   }
-  .info.legend i {
-    width: 12px; height: 12px; float: left; margin-right: 8px; margin-top: 4px;
-    border-radius: 50%; border: 1.5px solid var(--ink);
-  }
+  .lg-title { font-weight: 700; font-size: 0.78rem; }
+  .lg-sub { font-size: 0.68rem; color: var(--muted); margin-bottom: 5px; }
+  .lg-row { display: flex; align-items: center; font-size: 0.76rem; line-height: 1.6; }
+  .lg-row .sw { width: 16px; height: 12px; border: 1.5px solid var(--ink); margin-right: 8px; flex: none; }
+  .lg-divider { border-top: 1.5px solid var(--ink); margin: 8px 0 6px; }
+  .lg-sizes { display: flex; align-items: flex-end; gap: 10px; margin-top: 6px; }
+  .lg-size { display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; }
+  .lg-shape { background: #8a8478; }
+  .lg-shape.dot { border-radius: 50%; border: 1.5px solid var(--ink); }
+  .lg-shape.hex { clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+  .lg-note { font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; color: var(--muted); margin-top: 6px; }
 
   .loading {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -279,6 +289,11 @@
     header { padding: 0.9rem 1rem; }
     .toolbar { padding: 0.9rem 1rem; gap: 1.2rem; }
     .stat-row { padding: 0.8rem 1rem; grid-template-columns: repeat(2, 1fr); }
+    .map-controls .pill-group button { padding: 5px 10px; font-size: 0.7rem; }
+    .info.legend { font-size: 0.66rem; min-width: 0; padding: 6px 8px; line-height: 1.2; }
+    .info.legend .lg-row { margin: 1px 0; }
+    .info.legend .lg-sub, .info.legend .lg-note { display: none; }
+    .info.legend .lg-divider { margin: 4px 0; }
   }
 </style>
 </head>
@@ -373,13 +388,21 @@
   <div id="loading" class="loading">Loading and parsing data&hellip;</div>
 
   <div class="map-container">
-    <div class="map-toggle pill-group" id="mapModeGroup">
-      <button data-value="points" class="active">Points</button>
-      <button data-value="hexbin">Hexbin</button>
-    </div>
-    <div class="lasso-controls">
-      <button class="icon-btn" id="lassoToggleBtn" title="Draw a shape on the map to analyze listings inside it">&#9998; Lasso Select</button>
-      <button class="icon-btn" id="lassoResetBtn" title="Clear the lasso selection">&#8635; Reset</button>
+    <div class="map-controls">
+      <div class="map-controls-row">
+        <div class="pill-group" id="mapModeGroup" title="Show individual listings or aggregate them into hexagons">
+          <button data-value="points" class="active">Points</button>
+          <button data-value="hexbin">Hexbin</button>
+        </div>
+        <div class="pill-group" id="mapSymGroup" title="Color always shows price. Optionally add listing count as size.">
+          <button data-value="price" class="active">Price</button>
+          <button data-value="price_count">Price + Listings</button>
+        </div>
+      </div>
+      <div class="lasso-controls">
+        <button class="icon-btn" id="lassoToggleBtn" title="Draw a shape on the map to analyze listings inside it">&#9998; Lasso Select</button>
+        <button class="icon-btn" id="lassoResetBtn" title="Clear the lasso selection">&#8635; Reset</button>
+      </div>
     </div>
     <div id="lassoPanel" class="lasso-panel hidden">
       <div class="lasso-panel-header">
@@ -465,6 +488,7 @@ let metric = 'monthly';    // 'monthly' | 'sqft'
 let bedFilter = 'all';     // 'all' | '1' | '2' | '3' | '4+'
 let aggLevel = 'week';     // 'week' | 'month' | 'quarter' | 'year'
 let mapMode = 'points';    // 'points' | 'hexbin'
+let mapSymbology = 'price'; // 'price' (color = price only) | 'price_count' (color = price, size = listing count)
 
 let lassoActive = false;
 let lassoDrawing = false;
@@ -524,6 +548,7 @@ function wireControls() {
     wirePillGroup('bedFilterGroup', (val) => { bedFilter = val; updateMap(); updateKPIs(); computeLassoStats(); });
     wirePillGroup('aggGroup', (val) => { aggLevel = val; updateCharts(); });
     wirePillGroup('mapModeGroup', (val) => { mapMode = val; updateMap(); });
+    wirePillGroup('mapSymGroup', (val) => { mapSymbology = val; updateMap(); });
 
     document.getElementById('lassoToggleBtn').addEventListener('click', () => setLassoActive(!lassoActive));
     document.getElementById('lassoResetBtn').addEventListener('click', resetLasso);
@@ -1013,30 +1038,126 @@ function hexCorners(cx, cy, size) {
     }
     return corners;
 }
+function hexKey(d) {
+    const [x, y] = project(d.latitude, d.longitude);
+    const [q, r] = pixelToAxial(x, y, HEX_SIZE_M);
+    return q + ',' + r;
+}
+function listingKey(d) {
+    return d.id || d.formattedAddress || (d.latitude + ',' + d.longitude);
+}
+// Bins rows into hexagons. `count` = raw observations (a listing seen in 10 weekly
+// pulls counts 10 times); `listings` = DISTINCT listings, which is what "number of
+// listings" should mean on the map.
 function computeHexBins(rows, metricGetter) {
     const bins = {};
     rows.forEach(d => {
         if (!d.latitude || !d.longitude) return;
-        const [x, y] = project(d.latitude, d.longitude);
-        const [q, r] = pixelToAxial(x, y, HEX_SIZE_M);
-        const key = q + ',' + r;
-        if (!bins[key]) bins[key] = { q, r, values: [], count: 0 };
+        const key = hexKey(d);
+        if (!bins[key]) {
+            const [q, r] = key.split(',').map(Number);
+            bins[key] = { key, q, r, values: [], count: 0, ids: new Set() };
+        }
         const v = metricGetter(d);
-        if (v !== null) bins[key].values.push(v);
+        if (v !== null && v !== undefined && !isNaN(v)) bins[key].values.push(v);
         bins[key].count++;
+        bins[key].ids.add(listingKey(d));
     });
     return Object.values(bins).map(b => ({
         ...b,
+        listings: b.ids.size,
         avg: b.values.length ? mean(b.values) : null
     }));
 }
 
-function colorForValue(val, m) {
-    if (val === null || val === undefined) return '#94a3b8';
-    if (m === 'monthly') {
-        return val > 2000 ? '#b3271e' : val > 1400 ? '#d97706' : '#0a7a4b';
+// ============================================================
+// Price symbology: 7-class sequential ramp. Light = lower price, dark = higher.
+// Color means price and nothing else; listing count (optional) is encoded as SIZE.
+// ============================================================
+const PRICE_RAMP = ['#ffeda0', '#fed976', '#feb24c', '#fd8d3c', '#fc4e2a', '#e31a1c', '#b10026'];
+const NO_DATA_COLOR = '#cfcfcf';
+const POINT_RADIUS_DEFAULT = 4.5;
+const POINT_RADII = [3.5, 5.5, 8, 11];     // dot radius by listing-count class
+const HEX_SCALES = [0.45, 0.62, 0.79, 0.96]; // hex size (share of cell) by listing-count class
+const priceBreakCache = {};
+
+function quantileSorted(sorted, p) {
+    if (sorted.length === 0) return null;
+    const pos = (sorted.length - 1) * p;
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+function roundBreak(v, m) {
+    return m === 'monthly' ? Math.round(v / 25) * 25 : Math.round(v * 20) / 20; // $25 or $0.05
+}
+
+// Quantile breaks (equal share of listings/hexes per class) over the FULL dataset, so
+// a color means the same price no matter which filters/window are active. Points and
+// hexes get separate breaks because hex averages are much tighter than single listings.
+function getPriceBreaks(m, shape) {
+    const key = shape + '-' + m;
+    if (priceBreakCache[key]) return priceBreakCache[key];
+    const getter = d => m === 'monthly' ? d.price : d.price_sqft;
+    const geoRows = cleanData.filter(d => d.latitude && d.longitude);
+    let vals;
+    if (shape === 'point') {
+        vals = geoRows.map(getter).filter(v => v !== null && v !== undefined && !isNaN(v));
+    } else {
+        vals = computeHexBins(geoRows, getter).map(b => b.avg).filter(v => v !== null);
     }
-    return val > 1.5 ? '#b3271e' : val > 1.10 ? '#d97706' : '#0a7a4b';
+    vals.sort((a, b) => a - b);
+    const raw = [];
+    for (let i = 1; i < PRICE_RAMP.length; i++) raw.push(roundBreak(quantileSorted(vals, i / PRICE_RAMP.length), m));
+    const breaks = raw.filter((v, i) => i === 0 || v > raw[i - 1]); // drop duplicates after rounding
+    priceBreakCache[key] = breaks;
+    return breaks;
+}
+function classIndex(v, breaks) { // lower bound inclusive
+    let i = 0;
+    while (i < breaks.length && v >= breaks[i]) i++;
+    return i;
+}
+function rampColor(idx, nClasses) {
+    if (nClasses <= 1) return PRICE_RAMP[Math.floor(PRICE_RAMP.length / 2)];
+    return PRICE_RAMP[Math.round(idx * (PRICE_RAMP.length - 1) / (nClasses - 1))];
+}
+function colorForValue(val, m, shape) {
+    if (val === null || val === undefined || isNaN(val)) return NO_DATA_COLOR;
+    const breaks = getPriceBreaks(m, shape);
+    return rampColor(classIndex(val, breaks), breaks.length + 1);
+}
+
+// Listing-count classes ADAPT to what is currently plotted: a single week has far fewer
+// listings per hex than all weeks combined, so fixed global breaks would collapse to one class.
+// Returns inclusive upper bounds for every class except the last.
+function getCountBreaks(counts) {
+    if (!counts.length) return [];
+    const s = [...counts].sort((a, b) => a - b);
+    const max = s[s.length - 1];
+    const ub = [];
+    [0.25, 0.5, 0.75].forEach(p => {
+        const v = Math.ceil(quantileSorted(s, p));
+        if (v < max && (ub.length === 0 || v > ub[ub.length - 1])) ub.push(v);
+    });
+    return ub;
+}
+function countClass(n, ub) {
+    let i = 0;
+    while (i < ub.length && n > ub[i]) i++;
+    return i;
+}
+function pickBySize(idx, nClasses, arr) {
+    if (nClasses <= 1) return arr[Math.floor(arr.length / 2)];
+    return arr[Math.round(idx * (arr.length - 1) / (nClasses - 1))];
+}
+function countClassLabels(ub) {
+    const n = ub.length + 1, labels = [];
+    for (let i = 0; i < n; i++) {
+        const lo = i === 0 ? 1 : ub[i - 1] + 1;
+        if (i === n - 1) labels.push(`${lo}+`);
+        else labels.push(lo === ub[i] ? `${lo}` : `${lo}–${ub[i]}`);
+    }
+    return labels;
 }
 
 // ============================================================
@@ -1062,6 +1183,7 @@ function initMap() {
 function updateMap() {
     const visible = getVisibleData();
     mapMarkers.clearLayers();
+    if (mapLegend) { mapInstance.removeControl(mapLegend); mapLegend = null; }
     if (visible.length === 0) return;
 
     const dates = [...new Set(visible.map(d => d.date))].sort();
@@ -1070,19 +1192,39 @@ function updateMap() {
     // Also respects the Bedroom Type toggle, same as the KPI banner.
     const bedFn = d => bedFilter === 'all' || d.bedGroup === bedFilter;
     const windowData = visible.filter(d => d.latitude && d.longitude && bedFn(d));
+    if (windowData.length === 0) return;
 
     const metricGetter = d => metric === 'monthly' ? d.price : d.price_sqft;
+    const shape = mapMode === 'points' ? 'point' : 'hex';
+    const showCount = mapSymbology === 'price_count';
+
+    // Hex bins are needed in both modes: they ARE the hexbin layer, and in points mode
+    // they supply the "listings nearby" count that sizes each dot.
+    const bins = computeHexBins(windowData, metricGetter);
+    const binByKey = {};
+    bins.forEach(b => { binByKey[b.key] = b; });
+    const countUB = showCount ? getCountBreaks(bins.map(b => b.listings)) : [];
+    const nCountClasses = countUB.length + 1;
 
     // Precompute cut info once per window so every marker's popup can reference it
     const cutById = {};
     computePriceCutsForRows(windowData).forEach(c => { cutById[c.id] = c; });
 
     if (mapMode === 'points') {
+        const pts = [];
         windowData.forEach(d => {
             const val = metricGetter(d);
-            if (val === null || val === undefined) return;
-            const radius = metric === 'monthly' ? Math.min(Math.max(val / 300, 3), 12) : Math.min(Math.max(val * 4, 3), 12);
-            const color = colorForValue(val, metric);
+            if (val === null || val === undefined || isNaN(val)) return;
+            let radius = POINT_RADIUS_DEFAULT;
+            const bin = binByKey[hexKey(d)];
+            if (showCount) radius = pickBySize(countClass(bin.listings, countUB), nCountClasses, POINT_RADII);
+            pts.push({ d, val, radius, bin });
+        });
+        // Draw big dots first so small ones stay visible on top
+        if (showCount) pts.sort((a, b) => b.radius - a.radius);
+
+        pts.forEach(({ d, val, radius, bin }) => {
+            const color = colorForValue(val, metric, 'point');
 
             let extraLines = '';
             if (d.propertyType) extraLines += `Type: ${d.propertyType}<br>`;
@@ -1097,6 +1239,7 @@ function updateMap() {
             } else if (cutInfo && cutInfo.weeks >= 2) {
                 extraLines += `<span style="color:#55524a;">No price change across ${cutInfo.weeks} pulls</span><br>`;
             }
+            if (showCount) extraLines += `Listings in surrounding hex cell: ${bin.listings}<br>`;
 
             const popupContent = `
                 <b>${d.formattedAddress || 'Address Unknown'}</b><br>
@@ -1110,48 +1253,61 @@ function updateMap() {
             `;
 
             L.circleMarker([d.latitude, d.longitude], {
-                radius, fillColor: color, color: "#111111", weight: 1, opacity: 1, fillOpacity: 0.75
+                radius, fillColor: color, color: "#111111", weight: 1, opacity: 1, fillOpacity: 0.85
             }).bindPopup(popupContent).addTo(mapMarkers);
         });
     } else {
-        const bins = computeHexBins(windowData, metricGetter);
-        const maxCount = Math.max(...bins.map(b => b.count), 1);
         bins.forEach(b => {
             const [cx, cy] = axialToPixel(b.q, b.r, HEX_SIZE_M);
-            const corners = hexCorners(cx, cy, HEX_SIZE_M * 0.95).map(([x, y]) => unproject(x, y));
-            const color = colorForValue(b.avg, metric);
-            const opacity = 0.35 + 0.5 * (b.count / maxCount);
+            let scale = 0.95;
+            if (showCount) scale = pickBySize(countClass(b.listings, countUB), nCountClasses, HEX_SCALES);
+            const corners = hexCorners(cx, cy, HEX_SIZE_M * scale).map(([x, y]) => unproject(x, y));
+            const color = colorForValue(b.avg, metric, 'hex');
             L.polygon(corners, {
-                color: '#111111', weight: 1.2, fillColor: color, fillOpacity: opacity
+                color: '#111111', weight: 1.2, fillColor: color, fillOpacity: 0.88
             }).bindPopup(`
-                <b>${b.count} listing${b.count === 1 ? '' : 's'}</b><br>
+                <b>${b.listings} listing${b.listings === 1 ? '' : 's'}</b> (${b.count} weekly observation${b.count === 1 ? '' : 's'})<br>
                 Avg ${metric === 'monthly' ? 'Rent' : '$/SqFt'}: ${b.avg !== null ? (metric === 'monthly' ? '$' + Math.round(b.avg).toLocaleString() : '$' + b.avg.toFixed(2)) : 'N/A'}
             `).addTo(mapMarkers);
         });
     }
 
-    if (mapLegend) mapInstance.removeControl(mapLegend);
+    // ---- Legend ----
+    const priceBreaks = getPriceBreaks(metric, shape);
+    const nPrice = priceBreaks.length + 1;
+    const hasNoData = mapMode === 'hexbin' && bins.some(b => b.avg === null);
+    const fmt = v => metric === 'monthly' ? '$' + Math.round(v).toLocaleString() : '$' + v.toFixed(2);
+
     mapLegend = L.control({ position: 'bottomright' });
     mapLegend.onAdd = function () {
         const div = L.DomUtil.create('div', 'info legend');
-        let html = `<strong>${metric === 'monthly' ? 'Monthly Rent' : 'Price / SqFt'}</strong><br>`;
-        if (metric === 'monthly') {
-            html += '<i style="background:#b3271e"></i> &gt; $2,000<br>';
-            html += '<i style="background:#d97706"></i> $1,400 &ndash; $2,000<br>';
-            html += '<i style="background:#0a7a4b"></i> &lt; $1,400<br>';
-        } else {
-            html += '<i style="background:#b3271e"></i> &gt; $1.50<br>';
-            html += '<i style="background:#d97706"></i> $1.10 &ndash; $1.50<br>';
-            html += '<i style="background:#0a7a4b"></i> &lt; $1.10<br>';
+        let html = `<div class="lg-title">${metric === 'monthly' ? 'Monthly rent' : 'Rent per sq ft'}${mapMode === 'hexbin' ? ' (hex average)' : ''}</div>`;
+        html += '<div class="lg-sub">Darker = higher price</div>';
+        for (let i = nPrice - 1; i >= 0; i--) { // highest class on top
+            let label;
+            if (nPrice === 1) label = 'All listings';
+            else if (i === 0) label = `Under ${fmt(priceBreaks[0])}`;
+            else if (i === nPrice - 1) label = `${fmt(priceBreaks[nPrice - 2])} +`;
+            else label = `${fmt(priceBreaks[i - 1])} – ${fmt(priceBreaks[i])}`;
+            html += `<div class="lg-row"><span class="sw" style="background:${rampColor(i, nPrice)}"></span>${label}</div>`;
         }
-        if (mapMode === 'points') {
-            html += '<hr style="margin:8px 0 5px 0;border-top:1.5px solid #111;">';
-            html += '<span style="font-size:0.78rem;">Larger circle = higher price</span>';
-        } else {
-            html += '<hr style="margin:8px 0 5px 0;border-top:1.5px solid #111;">';
-            html += '<span style="font-size:0.78rem;">Darker hex = more listings</span>';
+        if (hasNoData) html += `<div class="lg-row"><span class="sw" style="background:${NO_DATA_COLOR}"></span>No $/sq ft data</div>`;
+
+        if (showCount) {
+            const labels = countClassLabels(countUB);
+            html += '<div class="lg-divider"></div>';
+            html += `<div class="lg-title">${mapMode === 'points' ? 'Dot' : 'Hex'} size = listings</div>`;
+            html += `<div class="lg-sub">${mapMode === 'points' ? 'in the surrounding hex cell (~0.7 sq mi)' : 'in each hex cell (~0.7 sq mi)'}</div>`;
+            html += '<div class="lg-sizes">';
+            labels.forEach((lab, i) => {
+                const px = mapMode === 'points'
+                    ? Math.round(2 * pickBySize(i, nCountClasses, POINT_RADII))
+                    : Math.round(28 * pickBySize(i, nCountClasses, HEX_SCALES));
+                html += `<div class="lg-size"><span class="lg-shape ${mapMode === 'points' ? 'dot' : 'hex'}" style="width:${px}px;height:${px}px"></span><span>${lab}</span></div>`;
+            });
+            html += '</div>';
         }
-        html += `<div class="mono" style="font-size:0.7rem;color:#55524a;margin-top:6px;">${dates.length} weekly pull${dates.length === 1 ? '' : 's'} shown</div>`;
+        html += `<div class="lg-note">${dates.length} weekly pull${dates.length === 1 ? '' : 's'} shown${showCount ? ' · size classes adapt to filters' : ''}</div>`;
         div.innerHTML = html;
         return div;
     };
